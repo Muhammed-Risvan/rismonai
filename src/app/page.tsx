@@ -6,6 +6,12 @@ export default function Home() {
         A hosted AI learning tutor that helps learners master any subject with
         personalized lessons, practice and spaced revision.
       </p>
+      <a
+        href="/login"
+        className="mt-2 rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-zinc-50 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        Sign in
+      </a>
     </main>
   );
 }

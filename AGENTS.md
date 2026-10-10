@@ -2,6 +2,8 @@
 
 - Do not run `git commit`, `git push`, `git tag` or release commands. The human does these.
 - Never commit, print or log secrets, `.env` files or database dumps.
+- Never read, open or copy `.env.local` or any real `.env` file; use `pnpm check:env` (names + set/missing only).
+- Ask before installing global software or changing system settings.
 - Keep changes small and reviewable; do not rewrite unrelated files.
 - Do not add frameworks, services or dependencies without justification.
 - Read `docs/architecture.md` before implementing a feature.

@@ -7,6 +7,7 @@ Rismon is a hosted, multi-user AI learning tutor (deployed on Vercel at [rismon.
 - **Node.js 24 LTS** (major pinned by `engines` in `package.json`; exact version in `.nvmrc`)
 - **pnpm** (version pinned by `packageManager` in `package.json` — install with `corepack enable pnpm`, or `npm install -g pnpm`)
 - **Git**
+- A **Supabase project** (for Auth + PostgreSQL). You need the URL, the anon/publishable key, the service/secret key (test helpers only) and two Postgres connection strings.
 
 All commands are for **PowerShell** and are run from the repository root.
 
@@ -15,6 +16,23 @@ All commands are for **PowerShell** and are run from the repository root.
 ```powershell
 pnpm install
 ```
+
+## Environment variables
+
+Copy the variable names from `.env.example` into a local `.env.local` and fill in real values:
+
+```powershell
+Copy-Item .env.example .env.local
+# then edit .env.local with your Supabase values — it is gitignored, never committed
+```
+
+`.env.local` holds secrets and is never committed, printed or logged. To check which variables are set **without** revealing values:
+
+```powershell
+pnpm check:env
+```
+
+Two database connection strings are used on purpose: `DATABASE_URL` (app runtime — the transaction pooler on Vercel) and `DATABASE_MIGRATION_URL` (session pooler, used by `drizzle-kit` only). See `docs/database.md`.
 
 ## Run (development)
 
@@ -56,12 +74,19 @@ Start the production server with `pnpm start` after building.
 pnpm lint
 ```
 
-## Environment variables
+## Database (Drizzle migrations)
 
-`.env.example` lists the variable names that future milestones will use. **None of them are used yet.** Real values belong in `.env.local`, which is never committed — `.env*` is gitignored except for `.env.example`.
+```powershell
+pnpm db:generate   # writes a new SQL file under drizzle/ from src/server/db/schema.ts
+# ...review the SQL...
+pnpm db:migrate    # applies pending migrations using DATABASE_MIGRATION_URL
+```
+
+Migrations are generated from the Drizzle schema, reviewed by a human, then applied. Never edit the schema through the Supabase dashboard. See `docs/database.md`.
 
 ## Documentation
 
-- `docs/architecture.md` — stack and layer rules
+- `docs/architecture.md` — stack, auth flow and layer rules
+- `docs/database.md` — tables, constraints, connection strings and the migration workflow
 - `docs/development.md` — development workflow
 - `AGENTS.md` — rules for AI agents working in this repository

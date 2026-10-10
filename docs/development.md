@@ -46,6 +46,23 @@ Remove-Item build.log
 - The Node major version is pinned by `engines` in `package.json` and `.nvmrc`; the package manager version by `packageManager`.
 - Schema changes happen only through Drizzle migrations, reviewed by the human before they are applied — never by editing the database through the dashboard.
 
+## Database migration workflow
+
+```powershell
+pnpm db:generate   # writes SQL under drizzle/ — safe to run any time
+# ...human reviews the SQL...
+pnpm db:migrate    # applies it — ONLY after the human says "migration applied"
+```
+
+- `drizzle.config.ts` reads `DATABASE_MIGRATION_URL` from `.env.local`
+  (drizzle-kit only; never the app's `DATABASE_URL`).
+- `pnpm check:env` prints each variable NAME and `set`/`missing` — never
+  values. `.env.local` and real env files must never be opened, read or
+  printed by anyone but the human.
+- DB integration tests run only when `ALLOW_DB_TESTS=true`; they live in
+  `tests/` and use `tests/helpers/` (the only place the service-role key
+  may appear).
+
 ## Asking
 
 Ask instead of guessing when something is unclear.
