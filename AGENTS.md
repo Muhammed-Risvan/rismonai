@@ -12,6 +12,7 @@
 - AI output is validated and can never set mastery or override answer keys.
 - Mastery, planner and revision logic live only in pure core modules with tests; they never call the clock, network or database directly.
 - Schema changes only through Drizzle migrations that the human reviews before they are applied; never edit the schema through the dashboard.
+- Every migration that creates a table must also `ENABLE ROW LEVEL SECURITY` on it and `REVOKE ALL` on it `FROM anon, authenticated`, so Supabase's auto-generated API can never read or write learner data.
 - Add or update tests for all learning logic.
 - Run the relevant checks and report real output; never claim something works without running it.
 - Use PowerShell-compatible commands.
