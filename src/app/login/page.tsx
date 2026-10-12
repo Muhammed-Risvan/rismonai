@@ -30,7 +30,7 @@ export default function LoginPage() {
         setError(result.message);
         return;
       }
-      router.push("/dashboard");
+      router.push("/onboarding");
       router.refresh();
     } catch {
       setError("Sign-in failed. Please try again.");

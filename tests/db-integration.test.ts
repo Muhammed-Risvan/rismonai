@@ -28,6 +28,7 @@ import {
   setGoalAmbition,
 } from "@/server/services/ambitions";
 import { seedAmbitionCatalog } from "@/server/services/seed-catalog";
+import { startJourney } from "@/server/services/onboarding";
 import {
   ConflictError,
   InvalidTransitionError,
@@ -493,6 +494,127 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
       .from("ambitions")
       .insert({ id: "injected", name: "x", description: "x", target_outcome: "x" });
     expect(ins.error).not.toBeNull();
+  });
+
+  // ==========================================================================
+  // M2 — onboarding: startJourney (create + link in one operation)
+  // ==========================================================================
+
+  it("startJourney creates an active goal linked to the selected ambition", async () => {
+    await ensureProfile(userA.id);
+    // User A may already hold an active goal from earlier tests — archive any
+    // active goal the service did not create for this scenario so onboarding
+    // runs from the true first-journey state.
+    const pre = await listGoals(userA.id);
+    for (const g of pre) {
+      if (g.status === "active") {
+        await changeGoalStatus(userA.id, g.id, { status: "archived" });
+      }
+    }
+
+    const journey = await startJourney(userA.id, {
+      ambitionId: "cloud-security-engineer",
+      outcome: "Become a cloud security engineer within a year",
+      hoursPerWeek: 6,
+    });
+
+    expect(journey.learnerId).toBe(userA.id);
+    expect(journey.status).toBe("active");
+    expect(journey.title).toBe("Cloud Security Engineer");
+    expect(journey.ambitionId).toBe("cloud-security-engineer");
+    expect(journey.targetOutcome).toBe(
+      "Become a cloud security engineer within a year",
+    );
+    expect(journey.hoursPerWeek).toBe(6);
+
+    // The selection persists: a later read returns the same linked goal.
+    const refetched = await getGoal(userA.id, journey.id);
+    expect(refetched.ambitionId).toBe("cloud-security-engineer");
+
+    // Tidy up: archive the journey so later scenarios start clean.
+    await changeGoalStatus(userA.id, journey.id, { status: "archived" });
+  });
+
+  it("startJourney rejects an unknown ambition without creating a goal", async () => {
+    await ensureProfile(userA.id);
+    const before = await listGoals(userA.id);
+
+    await expect(
+      startJourney(userA.id, {
+        ambitionId: "definitely-not-a-real-ambition",
+        outcome: "Something",
+        hoursPerWeek: 4,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    const after = await listGoals(userA.id);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("startJourney refuses a second active journey (one-active-goal invariant)", async () => {
+    await ensureProfile(userA.id);
+    // Ensure A holds exactly one active journey first.
+    let active = (await listGoals(userA.id)).find(
+      (g) => g.status === "active",
+    );
+    if (!active) {
+      active = await startJourney(userA.id, {
+        ambitionId: "cloud-security-engineer",
+        outcome: "First journey",
+        hoursPerWeek: 5,
+      });
+    }
+    expect(active.status).toBe("active");
+
+    const before = await listGoals(userA.id);
+    await expect(
+      startJourney(userA.id, {
+        ambitionId: "cloud-security-engineer",
+        outcome: "Second journey",
+        hoursPerWeek: 5,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    // No extra goal was created: the pre-check refuses before any insert,
+    // and the DB index is the final guard. A still has one active journey
+    // and the same number of goals.
+    const after = await listGoals(userA.id);
+    expect(after.length).toBe(before.length);
+    expect(after.filter((g) => g.status === "active").length).toBe(1);
+
+    await changeGoalStatus(userA.id, active.id, { status: "archived" });
+  });
+
+  it("startJourney is learner-scoped: A cannot start for B, and B sees only their own selection", async () => {
+    await ensureProfile(userA.id);
+    await ensureProfile(userB.id);
+
+    // B starts their own journey through the same service entry point.
+    const bPre = (await listGoals(userB.id)).filter(
+      (g) => g.status === "active",
+    );
+    for (const g of bPre) {
+      await changeGoalStatus(userB.id, g.id, { status: "archived" });
+    }
+    const bJourney = await startJourney(userB.id, {
+      ambitionId: "cloud-security-engineer",
+      outcome: "B's own journey",
+      hoursPerWeek: 3,
+    });
+    expect(bJourney.learnerId).toBe(userB.id);
+
+    // A cannot read B's journey (same NotFound as missing — no leak).
+    await expect(getGoal(userA.id, bJourney.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    const aGoals = await listGoals(userA.id);
+    expect(aGoals.some((g) => g.id === bJourney.id)).toBe(false);
+
+    // B sees their persisted selection on return.
+    const bGoals = await listGoals(userB.id);
+    expect(bGoals.some((g) => g.id === bJourney.id)).toBe(true);
+
+    await changeGoalStatus(userB.id, bJourney.id, { status: "archived" });
   });
 
   it("deleting auth user A cascades to their profile and goals", async () => {

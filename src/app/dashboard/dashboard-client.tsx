@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isValidTimeZone } from "@/lib/timezone";
 import { GOAL_TRANSITIONS, type GoalStatus } from "@/lib/goals/transitions";
-import type { GoalDto, ProfileDto } from "@/server/http/dto";
+import type { AmbitionDto, GoalDto, ProfileDto } from "@/server/http/dto";
 import { signOutAction } from "./actions";
 
 const STATUS_LABELS: Record<GoalStatus, string> = {
@@ -48,10 +48,17 @@ type Props = {
   email: string;
   initialProfile: ProfileDto;
   initialGoals: GoalDto[];
+  ambitions: AmbitionDto[];
 };
 
-export function DashboardClient({ email, initialProfile, initialGoals }: Props) {
+export function DashboardClient({
+  email,
+  initialProfile,
+  initialGoals,
+  ambitions,
+}: Props) {
   const [goals, setGoals] = useState(initialGoals);
+  const ambitionNames = new Map(ambitions.map((a) => [a.id, a.name]));
 
   const [displayName, setDisplayName] = useState(
     initialProfile.display_name ?? "",
@@ -271,6 +278,13 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
                         <span>
                           Status: {STATUS_LABELS[status] ?? goal.status}
                         </span>
+                        {goal.ambition_id && (
+                          <span>
+                            Ambition:{" "}
+                            {ambitionNames.get(goal.ambition_id) ??
+                              goal.ambition_id}
+                          </span>
+                        )}
                         {goal.target_outcome && (
                           <span>Outcome: {goal.target_outcome}</span>
                         )}
