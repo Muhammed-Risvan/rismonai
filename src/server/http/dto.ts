@@ -1,4 +1,4 @@
-import type { GoalRow, LearnerProfileRow } from "@/server/db/schema";
+import type { GoalRow, LearnerProfileRow, AmbitionRow } from "@/server/db/schema";
 
 export function profileDto(row: LearnerProfileRow) {
   return {
@@ -20,6 +20,19 @@ export function goalDto(row: GoalRow) {
     status: row.status,
     deadline: row.deadline,
     hours_per_week: row.hoursPerWeek,
+    ambition_id: row.ambitionId,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+export function ambitionDto(row: AmbitionRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    target_outcome: row.targetOutcome,
+    level: row.level,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -27,3 +40,4 @@ export function goalDto(row: GoalRow) {
 
 export type ProfileDto = ReturnType<typeof profileDto>;
 export type GoalDto = ReturnType<typeof goalDto>;
+export type AmbitionDto = ReturnType<typeof ambitionDto>;

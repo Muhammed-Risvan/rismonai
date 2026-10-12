@@ -1,0 +1,318 @@
+{
+  "id": "17707f35-ad02-4844-aa60-f45e249701e8",
+  "prevId": "4f60d737-eb15-4930-9308-c7beed2cbb0f",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.ambitions": {
+      "name": "ambitions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_outcome": {
+          "name": "target_outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'beginner'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ambitions_level_valid": {
+          "name": "ambitions_level_valid",
+          "value": "\"ambitions\".\"level\" in ('beginner','intermediate','advanced')"
+        },
+        "ambitions_name_length": {
+          "name": "ambitions_name_length",
+          "value": "length(\"ambitions\".\"name\") between 1 and 120"
+        },
+        "ambitions_target_outcome_max_length": {
+          "name": "ambitions_target_outcome_max_length",
+          "value": "length(\"ambitions\".\"target_outcome\") <= 500"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.goals": {
+      "name": "goals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "learner_id": {
+          "name": "learner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_outcome": {
+          "name": "target_outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline": {
+          "name": "deadline",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hours_per_week": {
+          "name": "hours_per_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ambition_id": {
+          "name": "ambition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "goals_learner_id_idx": {
+          "name": "goals_learner_id_idx",
+          "columns": [
+            {
+              "expression": "learner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "goals_ambition_id_idx": {
+          "name": "goals_ambition_id_idx",
+          "columns": [
+            {
+              "expression": "ambition_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "goals_one_active_per_learner": {
+          "name": "goals_one_active_per_learner",
+          "columns": [
+            {
+              "expression": "learner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "goals_learner_id_learner_profiles_id_fk": {
+          "name": "goals_learner_id_learner_profiles_id_fk",
+          "tableFrom": "goals",
+          "tableTo": "learner_profiles",
+          "columnsFrom": [
+            "learner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "goals_ambition_id_ambitions_id_fk": {
+          "name": "goals_ambition_id_ambitions_id_fk",
+          "tableFrom": "goals",
+          "tableTo": "ambitions",
+          "columnsFrom": [
+            "ambition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "goals_title_length": {
+          "name": "goals_title_length",
+          "value": "length(\"goals\".\"title\") between 1 and 200"
+        },
+        "goals_description_max_length": {
+          "name": "goals_description_max_length",
+          "value": "length(\"goals\".\"description\") <= 2000"
+        },
+        "goals_target_outcome_max_length": {
+          "name": "goals_target_outcome_max_length",
+          "value": "length(\"goals\".\"target_outcome\") <= 500"
+        },
+        "goals_status_valid": {
+          "name": "goals_status_valid",
+          "value": "\"goals\".\"status\" in ('active','paused','archived','completed')"
+        },
+        "goals_hours_per_week_range": {
+          "name": "goals_hours_per_week_range",
+          "value": "\"goals\".\"hours_per_week\" between 1 and 80"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.learner_profiles": {
+      "name": "learner_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'UTC'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "learner_profiles_display_name_max_length": {
+          "name": "learner_profiles_display_name_max_length",
+          "value": "length(\"learner_profiles\".\"display_name\") <= 80"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

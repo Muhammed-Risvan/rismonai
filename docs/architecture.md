@@ -66,6 +66,21 @@ Mastery rules, the planner and revision scheduling live here and are pure:
 
 **The AI proposes; deterministic code validates and owns mastery state.** No AI output may directly set mastery or override answer keys. All AI output is validated before it is used.
 
+## Public site (Milestone 2A)
+
+Marketing pages (`/`, `/vision`, `/beta`, `/contact`, `/privacy`, `/terms`,
+`not-found`, `robots`, `sitemap`) are thin Server Components under `src/app`
+using the design system in `src/components/ui` (tokens in
+`src/app/globals.css`, light/dark via `prefers-color-scheme`). The home hero's
+3D brain (`src/components/brain`, React Three Fiber) is client-only, loaded via
+`next/dynamic` (`ssr: false`) solely on `/`, with a static SVG fallback.
+Public pages hold no business logic and never compute mastery; sign-in failures
+are logged server-side as one short line (fixed label + Supabase code/status,
+never emails/tokens). Company/contact values in `src/config/site.ts` use the
+real values (Rismon.ai, from the house of Labs3am.com, hello@rismon.ai); only
+`jurisdiction` is still a placeholder. Security headers (no CSP yet — a later task) live in
+`next.config.ts`. See `docs/design.md`.
+
 ## Folders
 
 | Folder | Purpose | Status |

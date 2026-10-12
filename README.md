@@ -88,5 +88,22 @@ Migrations are generated from the Drizzle schema, reviewed by a human, then appl
 
 - `docs/architecture.md` — stack, auth flow and layer rules
 - `docs/database.md` — tables, constraints, connection strings and the migration workflow
+- `docs/design.md` — design tokens, fonts, components, brain performance rules
 - `docs/development.md` — development workflow
 - `AGENTS.md` — rules for AI agents working in this repository
+
+## Public site (Milestone 2A)
+
+- Marketing pages (`/`, `/vision`, `/beta`, `/contact`, `/privacy`, `/terms`) are
+  Server Components using `src/components/ui` (Button, Badge, Container,
+  Section, SiteHeader, SiteFooter) with tokens from `src/app/globals.css`
+  (light/dark via `prefers-color-scheme`, no toggle yet).
+- The home hero shows a 3D brain (`src/components/brain`): a deterministic
+  point cloud rendered with React Three Fiber, loaded with `next/dynamic`
+  (`ssr: false`) only on `/`, with a static SVG fallback when WebGL is
+  unavailable. Company details in `src/config/site.ts` use the real values
+  (Rismon.ai, from the house of Labs3am.com, hello@rismon.ai); only
+  `[JURISDICTION]` is still a placeholder.
+- `/privacy` and `/terms` are marked "DRAFT, pending review" and describe only
+  what the app does today (Supabase accounts + database, Vercel hosting,
+  essential auth cookies; no analytics, advertising or AI processing yet).

@@ -50,6 +50,11 @@ export const goals = pgTable(
     status: text("status").notNull(),
     deadline: date("deadline"),
     hoursPerWeek: integer("hours_per_week"),
+    // Links a saved goal to a catalog ambition (nullable, additive). Existing
+    // goals keep working with a null ambitionId until M2 assigns one.
+    ambitionId: text("ambition_id").references(() => ambitions.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -59,6 +64,7 @@ export const goals = pgTable(
   },
   (table) => [
     index("goals_learner_id_idx").on(table.learnerId),
+    index("goals_ambition_id_idx").on(table.ambitionId),
     // Only ONE active goal per learner, enforced by the database.
     uniqueIndex("goals_one_active_per_learner")
       .on(table.learnerId)
@@ -83,5 +89,44 @@ export const goals = pgTable(
   ],
 );
 
+/**
+ * Catalog of ambitions the product supports (reference data, NOT learner-owned).
+ *
+ * Ids are stable slugs matching the M0 `Ambition` contract (e.g.
+ * "cloud-security-engineer"), so goals can reference them. Seeded from
+ * `content/` via an idempotent upsert (see src/server/data/ambitions.ts).
+ * This table is public-by-design catalog data, but it still gets RLS + revokes
+ * so Supabase's Data API cannot expose or mutate it either; the app reads it
+ * through the server-side Drizzle connection only.
+ */
+export const ambitions = pgTable(
+  "ambitions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    targetOutcome: text("target_outcome").notNull(),
+    level: text("level").notNull().default("beginner"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "ambitions_level_valid",
+      sql`${table.level} in ('beginner','intermediate','advanced')`,
+    ),
+    check("ambitions_name_length", sql`length(${table.name}) between 1 and 120`),
+    check(
+      "ambitions_target_outcome_max_length",
+      sql`length(${table.targetOutcome}) <= 500`,
+    ),
+  ],
+);
+
 export type LearnerProfileRow = typeof learnerProfiles.$inferSelect;
 export type GoalRow = typeof goals.$inferSelect;
+export type AmbitionRow = typeof ambitions.$inferSelect;

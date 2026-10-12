@@ -22,6 +22,13 @@ import {
   updateGoal,
 } from "@/server/services/goals";
 import {
+  listAmbitions,
+  requireAmbition,
+  seedAmbition,
+  setGoalAmbition,
+} from "@/server/services/ambitions";
+import { seedAmbitionCatalog } from "@/server/services/seed-catalog";
+import {
   ConflictError,
   InvalidTransitionError,
   NotFoundError,
@@ -348,6 +355,144 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
       expect(after.updatedAt.getTime()).toBeGreaterThan(OLD.getTime());
       expect(after.createdAt.getTime()).toBe(OLD.getTime());
     }
+  });
+
+  // ==========================================================================
+  // M1 — ambition catalog + goal↔ambition link + isolation
+  // ==========================================================================
+
+  it("seeds the ambition catalog from content/ idempotently", async () => {
+    // First seed creates the catalog row(s).
+    const first = await seedAmbitionCatalog();
+    expect(first.seeded).toBeGreaterThanOrEqual(1);
+
+    const ambitions = await listAmbitions();
+    expect(ambitions.length).toBeGreaterThanOrEqual(1);
+    const cse = ambitions.find((a) => a.id === "cloud-security-engineer");
+    expect(cse).toBeDefined();
+    expect(cse?.name).toBe("Cloud Security Engineer");
+
+    // Re-seeding must not duplicate rows (upsert by id) and must stay stable.
+    const before = await listAmbitions();
+    await seedAmbitionCatalog();
+    const after = await listAmbitions();
+    expect(after.length).toBe(before.length);
+
+    // A direct raw count confirms exactly one row for the seeded id.
+    const raw = createRawClient();
+    try {
+      const rows = (await raw`SELECT id FROM ambitions WHERE id = 'cloud-security-engineer'`) as unknown as IdRow[];
+      expect(rows.length).toBe(1);
+    } finally {
+      await raw.end();
+    }
+  });
+
+  it("a learner can link their own goal to a catalog ambition", async () => {
+    await ensureProfile(userA.id);
+    const goal = await createGoal(userA.id, { title: "CSE journey" });
+
+    const linked = await setGoalAmbition(
+      userA.id,
+      goal.id,
+      "cloud-security-engineer",
+    );
+    expect(linked.ambitionId).toBe("cloud-security-engineer");
+
+    // The change is visible through the learner-scoped read and persists.
+    const refetched = await getGoal(userA.id, goal.id);
+    expect(refetched.ambitionId).toBe("cloud-security-engineer");
+  });
+
+  it("rejects linking to a non-existent catalog ambition", async () => {
+    await ensureProfile(userA.id);
+    const goal = await createGoal(userA.id, { title: "Bad link" });
+    await expect(
+      setGoalAmbition(userA.id, goal.id, "not-a-real-ambition"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    // Goal remains unlinked.
+    const refetched = await getGoal(userA.id, goal.id);
+    expect(refetched.ambitionId).toBeNull();
+  });
+
+  it("learner A cannot read, modify, or link learner B's goal", async () => {
+    await ensureProfile(userA.id);
+    await ensureProfile(userB.id);
+
+    const bGoal = await createGoal(userB.id, { title: "B private goal" });
+
+    // A cannot link B's goal to an ambition (same NotFound as missing).
+    await expect(
+      setGoalAmbition(userA.id, bGoal.id, "cloud-security-engineer"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    // B's goal stays unlinked from A's attempt.
+    const bRefetch = await getGoal(userB.id, bGoal.id);
+    expect(bRefetch.ambitionId).toBeNull();
+
+    // A cannot see B's goal in a scoped list.
+    const aGoals = await listGoals(userA.id);
+    expect(aGoals.some((g) => g.id === bGoal.id)).toBe(false);
+  });
+
+  it("the goal→ambition foreign key prevents an unknown ambition_id", async () => {
+    await ensureProfile(userA.id);
+    const raw = createRawClient();
+    try {
+      await expect(async () =>
+        raw`INSERT INTO goals (learner_id, title, status, ambition_id)
+            VALUES (${userA.id}, 'FK test', 'paused', 'no-such-ambition')`,
+      ).rejects.toHaveProperty("code", "23503"); // foreign_key_violation
+    } finally {
+      await raw.end();
+    }
+  });
+
+  it("deleting a catalog ambition nulls the link on goals (set null), keeps the goal", async () => {
+    await ensureProfile(userA.id);
+    // Seed a throwaway ambition, link a goal, then delete the ambition row.
+    await seedAmbition({
+      id: "temp-ambition",
+      name: "Temp",
+      description: "Temporary catalog entry for the set-null test.",
+      targetOutcome: "Exercise the ON DELETE SET NULL behavior.",
+      level: "beginner",
+    });
+    const goal = await createGoal(userA.id, { title: "Temp-linked goal" });
+    await setGoalAmbition(userA.id, goal.id, "temp-ambition");
+    expect((await getGoal(userA.id, goal.id)).ambitionId).toBe("temp-ambition");
+
+    const raw = createRawClient();
+    try {
+      await raw`DELETE FROM ambitions WHERE id = 'temp-ambition'`;
+      const after = await getGoal(userA.id, goal.id);
+      // Goal survives; the ambition link is cleared (SET NULL), not cascaded.
+      expect(after.id).toBe(goal.id);
+      expect(after.ambitionId).toBeNull();
+    } finally {
+      await raw.end();
+    }
+  });
+
+  it("requireAmbition throws NotFound for an unknown id (used when linking)", async () => {
+    await expect(requireAmbition("nope")).rejects.toBeInstanceOf(NotFoundError);
+    const ok = await requireAmbition("cloud-security-engineer");
+    expect(ok.id).toBe("cloud-security-engineer");
+  });
+
+  it("the Supabase Data API (anon key) cannot read the ambitions catalog", async () => {
+    await seedAmbitionCatalog();
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    const anon = createClient(url, anonKey, { auth: { persistSession: false } });
+
+    const read = await anon.from("ambitions").select("*");
+    expect(read.error !== null || (read.data?.length ?? 0) === 0).toBe(true);
+
+    const ins = await anon
+      .from("ambitions")
+      .insert({ id: "injected", name: "x", description: "x", target_outcome: "x" });
+    expect(ins.error).not.toBeNull();
   });
 
   it("deleting auth user A cascades to their profile and goals", async () => {

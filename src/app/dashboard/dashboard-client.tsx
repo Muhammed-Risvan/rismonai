@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useState, type FormEvent } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { isValidTimeZone } from "@/lib/timezone";
 import { GOAL_TRANSITIONS, type GoalStatus } from "@/lib/goals/transitions";
 import type { GoalDto, ProfileDto } from "@/server/http/dto";
@@ -168,26 +170,23 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
   }
 
   const inputClass =
-    "rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:border-zinc-500 dark:border-zinc-700";
+    "rounded-md border border-border bg-transparent px-3 py-2 text-base outline-none";
 
   return (
     <div className="mt-4 flex flex-col gap-10">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">{email}</p>
+          <h1 className="text-3xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted">{email}</p>
         </div>
         <form action={signOutAction}>
-          <button
-            type="submit"
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
+          <Button type="submit" variant="secondary" size="sm">
             Sign out
-          </button>
+          </Button>
         </form>
       </div>
 
-      <section className="rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
+      <section className="rounded-lg border border-border p-6">
         <h2 className="mb-4 text-lg font-semibold">Profile</h2>
         <form onSubmit={handleProfileSubmit} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium">
@@ -226,13 +225,9 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={profileSaving}
-            className="w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
+          <Button type="submit" disabled={profileSaving} className="w-fit">
             {profileSaving ? "Saving…" : "Save profile"}
-          </button>
+          </Button>
         </form>
       </section>
 
@@ -249,11 +244,9 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
         )}
 
         {goalsLoading ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Loading goals…
-          </p>
+          <p className="text-sm text-muted">Loading goals…</p>
         ) : goals.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             No goals yet. Create your first goal below.
           </p>
         ) : (
@@ -264,17 +257,17 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
               return (
                 <li
                   key={goal.id}
-                  className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800"
+                  className="rounded-lg border border-border p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-base font-medium">{goal.title}</p>
                       {goal.description && (
-                        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                        <p className="mt-1 text-sm text-muted">
                           {goal.description}
                         </p>
                       )}
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                         <span>
                           Status: {STATUS_LABELS[status] ?? goal.status}
                         </span>
@@ -287,25 +280,24 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
                         )}
                       </div>
                     </div>
-                    <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium dark:bg-zinc-900">
-                      {STATUS_LABELS[status] ?? goal.status}
-                    </span>
+                    <Badge>{STATUS_LABELS[status] ?? goal.status}</Badge>
                   </div>
 
                   {nextStatuses.length > 0 && (
                     <div className="mt-4 flex flex-wrap gap-2">
                       {nextStatuses.map((next) => (
-                        <button
+                        <Button
                           key={next}
                           type="button"
+                          variant="secondary"
+                          size="sm"
                           disabled={busyGoalId === goal.id}
                           onClick={() => void changeStatus(goal.id, next)}
-                          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
                         >
                           {busyGoalId === goal.id
                             ? "Working…"
                             : TRANSITION_LABELS[next]}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   )}
@@ -317,7 +309,7 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
 
         <form
           onSubmit={handleCreateGoal}
-          className="flex flex-col gap-4 rounded-xl border border-dashed border-zinc-300 p-6 dark:border-zinc-700"
+          className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-6"
         >
           <h3 className="text-base font-semibold">New goal</h3>
           <label className="flex flex-col gap-1 text-sm font-medium">
@@ -386,13 +378,9 @@ export function DashboardClient({ email, initialProfile, initialGoals }: Props) 
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={createSaving}
-            className="w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
+          <Button type="submit" disabled={createSaving} className="w-fit">
             {createSaving ? "Creating…" : "Create goal"}
-          </button>
+          </Button>
         </form>
       </section>
     </div>

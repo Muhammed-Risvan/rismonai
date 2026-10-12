@@ -5,6 +5,7 @@ import { UnauthenticatedError } from "@/server/errors";
 import { goalDto, profileDto } from "@/server/http/dto";
 import { listGoals } from "@/server/services/goals";
 import { ensureProfile } from "@/server/services/profile";
+import { Container } from "@/components/ui/container";
 import { DashboardClient } from "./dashboard-client";
 
 // Reading the auth session (cookies) is runtime data; this protected route
@@ -26,17 +27,19 @@ export default async function DashboardPage() {
   const goals = await listGoals(learner.learnerId);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        <Link href="/" className="underline underline-offset-2">
-          Home
-        </Link>
-      </p>
-      <DashboardClient
-        email={learner.email}
-        initialProfile={profileDto(profile)}
-        initialGoals={goals.map(goalDto)}
-      />
+    <main id="main" className="flex-1">
+      <Container className="py-10">
+        <p className="text-sm text-muted">
+          <Link href="/" className="underline underline-offset-2">
+            Home
+          </Link>
+        </p>
+        <DashboardClient
+          email={learner.email}
+          initialProfile={profileDto(profile)}
+          initialGoals={goals.map(goalDto)}
+        />
+      </Container>
     </main>
   );
 }

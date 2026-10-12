@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig } from "vitest/config";
 
 const srcDir = fileURLToPath(new URL("./src", import.meta.url));
+const contentDir = fileURLToPath(new URL("./content", import.meta.url));
 const emptyModule = fileURLToPath(
   new URL("./tests/helpers/empty-module.ts", import.meta.url),
 );
@@ -11,6 +12,8 @@ export default defineConfig({
     alias: [
       // Mirrors the "@/*" path alias in tsconfig.json.
       { find: "@", replacement: srcDir },
+      // Mirrors the "@content/*" path alias (repo-root curriculum data).
+      { find: "@content", replacement: contentDir },
       // `server-only` throws outside React Server Components; tests run in
       // plain Node, so alias it to an empty module.
       { find: /^server-only$/, replacement: emptyModule },
