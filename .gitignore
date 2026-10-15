@@ -30,6 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# one-off local authoring scratchpads (never part of the build)
+*.py
+tc_out.txt
+test_append.txt
+
 # env files (only the safe example may be committed)
 .env*
 !.env.example

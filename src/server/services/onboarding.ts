@@ -1,5 +1,6 @@
 import { ConflictError, NotFoundError } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
+import { getDb } from "@/server/db/client";
 import type { GoalRow } from "@/server/db/schema";
 import { countActiveGoals, insertGoal } from "@/server/data/goals";
 import { updateGoalAmbitionForLearner } from "@/server/data/ambitions";
@@ -33,27 +34,39 @@ export async function startJourney(
   }
 
   try {
-    const goal = await insertGoal({
-      learnerId,
-      title: ambition.name,
-      description: input.background ?? null,
-      targetOutcome: input.outcome,
-      status: "active",
-      deadline: input.deadline ?? null,
-      hoursPerWeek: input.hoursPerWeek,
-    });
+    // Both writes in ONE transaction: a goal and its ambition link are one
+    // fact. Previously a failure between the insert and the link left a goal
+    // with a null ambition_id, which permanently blocked the learner's
+    // diagnostic (`no-ambition`) with no UI to repair it.
+    const goal = await getDb().transaction(async (tx) => {
+      const created = await insertGoal(
+        {
+          learnerId,
+          title: ambition.name,
+          description: input.background ?? null,
+          targetOutcome: input.outcome,
+          status: "active",
+          deadline: input.deadline ?? null,
+          hoursPerWeek: input.hoursPerWeek,
+          ambitionId: ambition.id,
+        },
+        tx,
+      );
 
-    const linked = await updateGoalAmbitionForLearner(
-      learnerId,
-      goal.id,
-      ambition.id,
-    );
-    if (!linked) {
-      // Should not happen (we just created this goal for this learner);
-      // surface as a server error upstream rather than a silent half-state.
-      throw new Error("Failed to link the new journey to its ambition");
-    }
-    return linked;
+      const linked = await updateGoalAmbitionForLearner(
+        learnerId,
+        created.id,
+        ambition.id,
+        tx,
+      );
+      if (!linked) {
+        // Cannot happen (we just created this goal for this learner), but
+        // throwing rolls the transaction back rather than half-committing.
+        throw new Error("Failed to link the new journey to its ambition");
+      }
+      return linked;
+    });
+    return goal;
   } catch (error) {
     if (error instanceof NotFoundError || error instanceof ConflictError) {
       throw error;

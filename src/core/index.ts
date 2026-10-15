@@ -8,25 +8,23 @@
  * milestones build on; the UI and services must never re-implement this logic.
  */
 export {
-  ambitionId,
-  capabilityId,
-  exerciseId,
-  lessonId,
-  misconceptionId,
-  objectiveId,
-  type AmbitionId,
-  type CapabilityId,
-  type ExerciseId,
-  type LessonId,
-  type MisconceptionId,
-  type ObjectiveId,
-} from "./identifiers";
-export {
+  DEFAULT_MASTERY_POLICY,
   MASTERY_STATES,
+  evaluateMastery,
   isMasteryState,
   masteryStateSchema,
+  type MasteryAttempt,
+  type MasteryDecision,
+  type MasteryEvidence,
+  type MasteryPolicy,
   type MasteryState,
 } from "./mastery";
+export {
+  DEFAULT_REVIEW_INTERVAL_DAYS,
+  isDueForReview,
+  scheduleReview,
+  type ReviewSchedule,
+} from "./revision";
 export type { Attempt, AttemptItemRef, AttemptMode } from "./attempt";
-export type { ActivityKind, Recommendation } from "./recommendation";
 export * from "./content";
+export * from "./diagnostic";

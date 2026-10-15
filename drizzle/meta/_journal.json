@@ -15,6 +15,27 @@
       "when": 1791800419364,
       "tag": "0001_hard_brood",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791810784243,
+      "tag": "0002_ambitious_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792000323085,
+      "tag": "0003_silky_edwin_jarvis",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792051667515,
+      "tag": "0005_puzzling_warhawk",
+      "breakpoints": true
     }
   ]
 }

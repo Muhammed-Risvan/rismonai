@@ -58,12 +58,8 @@ export default function PrivacyPage() {
                 <strong className="text-foreground">
                   {siteConfig.parentCompanyName}
                 </strong>
-                , registered in{" "}
-                <strong className="text-foreground">
-                  {siteConfig.jurisdiction}
-                </strong>
-                . The jurisdiction is a placeholder until the real details are
-                confirmed. Contact:{" "}
+                . The registered jurisdiction is not yet stated here — it will
+                be added once the company details are confirmed. Contact:{" "}
                 <strong className="text-foreground">{siteConfig.contactEmail}</strong>.
               </p>
             </section>
@@ -86,6 +82,16 @@ export default function PrivacyPage() {
                 <li>
                   <strong className="text-foreground">Profile:</strong> your
                   display name and timezone.
+                </li>
+                <li>
+                  <strong className="text-foreground">
+                    Diagnostic evidence:
+                  </strong>{" "}
+                  the answers you give in the starting diagnostic, whether each
+                  was right, and — when a specific wrong answer points to a
+                  known misunderstanding — which one it was. This is what
+                  lets Rismon bring the same mistake back to you later instead
+                  of forgetting it.
                 </li>
                 <li>
                   <strong className="text-foreground">Hosting:</strong> the app

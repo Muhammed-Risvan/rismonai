@@ -7,6 +7,7 @@
  */
 
 const FAILURE_LABEL = "auth.signIn failed";
+const SIGN_UP_FAILURE_LABEL = "auth.signUp failed";
 const ENV_LABEL = "auth.env missing";
 
 /** Supabase codes look like `invalid_credentials` — no spaces, no @, no =. */
@@ -44,6 +45,20 @@ export function signInFailureLogLine(error: unknown): string {
   const status = extractStatus(error);
   if (status !== null) return `${FAILURE_LABEL}: status=${status}`;
   return `${FAILURE_LABEL}: unknown`;
+}
+
+/**
+ * One short line for a failed sign-up, e.g.
+ * `auth.signUp failed: user_already_exists`. Identical discipline to
+ * {@link signInFailureLogLine}: a machine-readable code only, never free
+ * text, emails or the whole error object.
+ */
+export function signUpFailureLogLine(error: unknown): string {
+  const code = extractCode(error);
+  if (code !== null) return `${SIGN_UP_FAILURE_LABEL}: ${code}`;
+  const status = extractStatus(error);
+  if (status !== null) return `${SIGN_UP_FAILURE_LABEL}: status=${status}`;
+  return `${SIGN_UP_FAILURE_LABEL}: unknown`;
 }
 
 /**

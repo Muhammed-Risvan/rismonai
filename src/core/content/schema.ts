@@ -83,6 +83,30 @@ export const exerciseSchema = z
     answerKey: answerKeySchema,
     /** Optional hints (only surfaced in guided mode). */
     hints: z.array(z.string().min(1).max(500)).max(5).default([]),
+    /**
+     * Remedial re-probe: the id of the item whose INCORRECT answer makes this
+     * item worth asking. Content-owned, so the diagnostic engine stays
+     * ambition-agnostic (previously this lived as a hardcoded slug map inside
+     * `core/diagnostic/bank.ts`, which silently broke on a second ambition).
+     * `null` (the default) means the item is always asked in order.
+     */
+    reprobeOf: slugSchema.nullable().default(null),
+    /**
+     * Maps a SPECIFIC wrong answer to the misconception it evidences. This is
+     * what makes misconception detection possible: without it, a wrong answer
+     * is just `correct: false` and the reason is unrecoverable.
+     */
+    misconceptionSignatures: z
+      .array(
+        z
+          .object({
+            /** The exact (normalized) wrong answer that signals this misconception. */
+            answer: z.string().min(1),
+            misconceptionId: slugSchema,
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 

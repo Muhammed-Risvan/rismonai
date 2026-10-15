@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 import { competencyMapSchema, type CompetencyMap } from "./ambition";
 import { assertValidPrerequisiteDag } from "./dag";
+import { assertValidReferences } from "./references";
 
 /**
  * Validate an unknown value as a full CompetencyMap: Zod shape validation
@@ -22,6 +23,7 @@ export function validateCompetencyMap(
   }
   try {
     assertValidPrerequisiteDag(parsed.data.capabilities);
+    assertValidReferences(parsed.data);
   } catch (error) {
     return {
       ok: false,

@@ -100,6 +100,75 @@ export const cloudSecurityEngineerMap: CompetencyMap = {
       kind: "assessment",
       answerKey: { accepted: ["you"] },
       hints: ["Think about who configures and controls the instance."],
+      reprobeOf: null,
+      misconceptionSignatures: [
+        {
+          answer: "provider",
+          misconceptionId: "misconception-provider-secures-everything",
+        },
+      ],
+    },
+    {
+      id: "exercise-shared-boundary-check",
+      prompt:
+        "Your team stores customer files in a cloud storage bucket. Who is responsible for making sure the bucket is not accidentally public: the cloud provider, or you? (provider / you)",
+      capabilityIds: ["cloud-shared-responsibility"],
+      kind: "assessment",
+      answerKey: { accepted: ["you"] },
+      hints: ["Think about who chose the sharing settings."],
+      // Remedial re-probe: only asked when the learner got the general
+      // shared-responsibility question wrong, to confirm the boundary is
+      // missing rather than just one phrasing being unfamiliar.
+      reprobeOf: "exercise-shared-responsibility-mcq",
+      misconceptionSignatures: [
+        {
+          answer: "provider",
+          misconceptionId: "misconception-provider-secures-everything",
+        },
+      ],
+    },
+    {
+      id: "exercise-identity-allowlist-assessment",
+      prompt:
+        "A support engineer only resets passwords. Should their account get read-only access to user profiles, or full administrator access? (read-only / administrator)",
+      capabilityIds: ["identity-and-access-basics"],
+      kind: "assessment",
+      answerKey: { accepted: ["read-only"] },
+      hints: ["Give only the access the job actually needs."],
+      reprobeOf: null,
+      misconceptionSignatures: [
+        {
+          answer: "administrator",
+          misconceptionId: "misconception-admin-is-safer",
+        },
+      ],
+    },
+    {
+      id: "exercise-network-exposure-assessment",
+      prompt:
+        "A database should only be reachable from inside your private network. Should it get a public internet address, or stay private-only? (public / private-only)",
+      capabilityIds: ["network-security-basics"],
+      kind: "assessment",
+      answerKey: { accepted: ["private-only"] },
+      hints: ["Fewer reachable doors means a smaller attack surface."],
+      reprobeOf: null,
+      misconceptionSignatures: [
+        {
+          answer: "public",
+          misconceptionId: "misconception-public-is-convenient",
+        },
+      ],
+    },
+    {
+      id: "exercise-detection-signal-assessment",
+      prompt:
+        "An alert says someone signed in from a new country at 3am and downloaded your billing export. Which log answers who did it: the sign-in log, or the coffee machine log? (sign-in log / coffee machine log)",
+      capabilityIds: ["logging-and-monitoring"],
+      kind: "assessment",
+      answerKey: { accepted: ["sign-in log"] },
+      hints: ["Ask which record tracks logins."],
+      reprobeOf: null,
+      misconceptionSignatures: [],
     },
     {
       id: "exercise-least-privilege-choice",
@@ -109,6 +178,8 @@ export const cloudSecurityEngineerMap: CompetencyMap = {
       kind: "practice",
       answerKey: { accepted: ["read-only"] },
       hints: ["Choose the option that limits what could go wrong."],
+      reprobeOf: null,
+      misconceptionSignatures: [],
     },
   ],
   misconceptions: [
@@ -127,6 +198,14 @@ export const cloudSecurityEngineerMap: CompetencyMap = {
         "Believing broad admin access is safer because it avoids permission errors.",
       remediation:
         "Show how least privilege limits blast radius when something goes wrong.",
+    },
+    {
+      id: "misconception-public-is-convenient",
+      capabilityId: "network-security-basics",
+      description:
+        "Believing a resource should be reachable from the internet because it is easier to test and manage.",
+      remediation:
+        "Contrast the reachability you chose with the reachability you needed, then show the exposure that difference creates.",
     },
   ],
 };

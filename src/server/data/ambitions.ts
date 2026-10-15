@@ -1,5 +1,5 @@
 import { and, asc, eq, sql } from "drizzle-orm";
-import { getDb } from "@/server/db/client";
+import { getDb, type DbOrTx } from "@/server/db/client";
 import {
   ambitions,
   goals,
@@ -83,8 +83,9 @@ export async function updateGoalAmbitionForLearner(
   learnerId: string,
   goalId: string,
   ambitionId: string | null,
+  db: DbOrTx = getDb(),
 ): Promise<GoalRow | undefined> {
-  const rows = await getDb()
+  const rows = await db
     .update(goals)
     .set({ ambitionId, updatedAt: sql`now()` })
     .where(and(eq(goals.id, goalId), eq(goals.learnerId, learnerId)))

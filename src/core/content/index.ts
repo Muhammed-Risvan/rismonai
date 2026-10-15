@@ -38,6 +38,10 @@ export {
   type CapabilityGraphInput,
 } from "./dag";
 export {
+  assertValidReferences,
+  isValidReferences,
+} from "./references";
+export {
   validateCompetencyMap,
   formatZodError,
   type CompetencyMapValidation,

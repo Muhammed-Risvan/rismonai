@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
-import { Badge } from "./badge";
 import { Container } from "./container";
 
 const FOOTER_LINKS = [
@@ -38,8 +37,7 @@ export async function SiteFooter() {
               {siteConfig.parentCompanyName}
             </a>
           </span>
-          <Badge>Private beta</Badge>
-        </div>
+          </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2">
           {FOOTER_LINKS.map((item) => (
             <Link

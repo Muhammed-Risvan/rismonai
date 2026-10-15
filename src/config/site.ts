@@ -1,7 +1,9 @@
 /**
  * Public site configuration.
  *
- * `jurisdiction` is still a placeholder — never invent a real value for it.
+ * The registered jurisdiction is deliberately NOT configured here: it is not
+ * yet confirmed, and inventing a value would put a false legal statement on
+ * the public site. It will be added once confirmed.
  * `url` is the documented deployment host (README.md, docs/architecture.md).
  */
 export const siteConfig = {
@@ -14,7 +16,6 @@ export const siteConfig = {
   companyName: "Rismon.ai",
   parentCompanyName: "Labs3am.com",
   parentCompanyUrl: "https://labs3am.com",
-  jurisdiction: "[JURISDICTION]",
 } as const;
 
 /**

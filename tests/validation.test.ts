@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { isValidTimeZone } from "@/lib/timezone";
 import {
+  diagnosticAnswerSchema,
+  diagnosticOptOutSchema,
+} from "@/server/validation/diagnostic";
+import {
   goalCreateSchema,
   goalStatusChangeSchema,
   goalUpdateSchema,
@@ -190,5 +194,88 @@ describe("isValidTimeZone", () => {
     expect(isValidTimeZone("")).toBe(false);
     expect(isValidTimeZone("Nowhere/Zone")).toBe(false);
     expect(isValidTimeZone("garbage")).toBe(false);
+  });
+});
+
+describe("diagnosticAnswerSchema", () => {
+  const valid = {
+    runId: "00000000-0000-4000-8000-000000000000",
+    itemId: "exercise-shared-responsibility-mcq",
+    response: "you",
+  };
+
+  it("accepts the minimal answer body (run + item + raw response)", () => {
+    expect(diagnosticAnswerSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("rejects server-only keys (correct, capability, accepted, learner)", () => {
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, correct: true }).success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({
+        ...valid,
+        capability_id: "cloud-shared-responsibility",
+      }).success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, accepted: ["you"] })
+        .success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, learner_id: "someone-else" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("rejects a non-uuid runId and a non-slug itemId", () => {
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, runId: "not-a-uuid" })
+        .success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, itemId: "Not A Slug" })
+        .success,
+    ).toBe(false);
+    expect(diagnosticAnswerSchema.safeParse({ ...valid, itemId: "" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an empty response and one longer than 500 characters", () => {
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, response: "" }).success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, response: "a".repeat(501) })
+        .success,
+    ).toBe(false);
+    expect(
+      diagnosticAnswerSchema.safeParse({ ...valid, response: "a".repeat(500) })
+        .success,
+    ).toBe(true);
+  });
+});
+
+describe("diagnosticOptOutSchema", () => {
+  it("accepts a bare run reference", () => {
+    expect(
+      diagnosticOptOutSchema.safeParse({
+        runId: "00000000-0000-4000-8000-000000000000",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects unknown keys, a malformed run id, and missing fields", () => {
+    expect(
+      diagnosticOptOutSchema.safeParse({
+        runId: "00000000-0000-4000-8000-000000000000",
+        learner_id: "someone-else",
+      }).success,
+    ).toBe(false);
+    expect(diagnosticOptOutSchema.safeParse({ runId: "nope" }).success).toBe(
+      false,
+    );
+    expect(diagnosticOptOutSchema.safeParse({}).success).toBe(false);
   });
 });

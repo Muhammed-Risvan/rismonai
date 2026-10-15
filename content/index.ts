@@ -3,6 +3,7 @@ import {
   validateCompetencyMap,
   type Ambition,
   type AmbitionCatalogEntry,
+  type Misconception,
 } from "@/core/content";
 import { cloudSecurityEngineerMap } from "./cloud-security-engineer";
 
@@ -48,4 +49,26 @@ export function getAmbitionEntry(
   ambitionId: string,
 ): AmbitionCatalogEntry | undefined {
   return AMBITION_CATALOG.find((entry) => entry.ambition.id === ambitionId);
+}
+
+/**
+ * Look up an authored misconception by its content slug, across the whole
+ * catalog. Used to explain a learner's recorded mistake with reviewed content
+ * rather than an AI improvisation.
+ *
+ * Slugs are globally unique by convention (content validation rejects
+ * duplicates within a map); the first match wins deterministically.
+ */
+export function getMisconception(
+  misconceptionId: string,
+): Misconception | undefined {
+  for (const entry of AMBITION_CATALOG) {
+    const found = entry.competencyMap.misconceptions.find(
+      (misconception) => misconception.id === misconceptionId,
+    );
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
 }

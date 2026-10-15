@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { getDb } from "@/server/db/client";
+import { getDb, type DbOrTx } from "@/server/db/client";
 import { goals, type GoalRow, type GoalStatus } from "@/server/db/schema";
 
 export type GoalInsertValues = {
@@ -10,12 +10,21 @@ export type GoalInsertValues = {
   status: GoalStatus;
   deadline: string | null;
   hoursPerWeek: number | null;
+  /** Optional catalog ambition link, written in the same insert when known. */
+  ambitionId?: string | null;
 };
 
+/**
+ * Pass the caller's transaction handle when inside one (e.g. onboarding,
+ * which must write the goal and its ambition link atomically). The pool is
+ * `max: 1`, so a nested `getDb()` call while a transaction is open would
+ * self-deadlock.
+ */
 export async function insertGoal(
   values: GoalInsertValues,
+  db: DbOrTx = getDb(),
 ): Promise<GoalRow> {
-  const rows = await getDb().insert(goals).values(values).returning();
+  const rows = await db.insert(goals).values(values).returning();
   const row = rows[0];
   if (!row) {
     throw new Error("Failed to create goal");

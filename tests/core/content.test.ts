@@ -128,14 +128,22 @@ describe("validateCompetencyMap rejects broken input", () => {
 });
 
 describe("mastery state contract", () => {
-  it("exposes exactly the five documented states", () => {
+  it("exposes exactly the documented ladder", () => {
     expect([...MASTERY_STATES]).toEqual([
       "unknown",
       "untested",
-      "developing",
+      "introduced",
+      "practising",
+      "demonstrated",
       "mastered",
       "revision-needed",
     ]);
+  });
+
+  it("distinguishes an unassisted demonstration from assisted practice", () => {
+    expect(MASTERY_STATES).toContain("practising");
+    expect(MASTERY_STATES).toContain("demonstrated");
+    expect(MASTERY_STATES).not.toContain("developing");
   });
 
   it("recognizes valid states and rejects invalid ones", () => {

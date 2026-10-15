@@ -1,3 +1,4 @@
+import { AMBITION_CATALOG } from "@content";
 import { NotFoundError } from "@/server/errors";
 import {
   selectAmbitionById,
@@ -15,8 +16,33 @@ import type { AmbitionRow, GoalRow } from "@/server/db/schema";
  * learner-scoped and enforces ownership the same way goals do.
  */
 
-/** Lists all catalog ambitions (not learner-scoped). */
+/**
+ * Lists all catalog ambitions (not learner-scoped), self-seeding the catalog
+ * from `content/` when it is out of sync.
+ *
+ * The ambitions table is reference data derived from versioned content, so a
+ * fresh database would otherwise render an empty picker and onboarding would
+ * be impossible. Seeding is idempotent (upsert by stable slug), and the cheap
+ * guard below means a healthy catalog costs exactly one SELECT with no writes.
+ */
 export async function listAmbitions(): Promise<AmbitionRow[]> {
+  const rows = await selectAmbitions();
+  const present = new Set(rows.map((row) => row.id));
+  const missing = AMBITION_CATALOG.filter(
+    (entry) => !present.has(entry.ambition.id),
+  );
+  if (missing.length === 0) {
+    return rows;
+  }
+  for (const entry of missing) {
+    await seedAmbition({
+      id: entry.ambition.id,
+      name: entry.ambition.name,
+      description: entry.ambition.description,
+      targetOutcome: entry.ambition.targetOutcome,
+      level: entry.ambition.level,
+    });
+  }
   return selectAmbitions();
 }
 

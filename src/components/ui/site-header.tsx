@@ -6,13 +6,20 @@ import { useState } from "react";
 import { ButtonLink } from "./button";
 import { Container } from "./container";
 
+/**
+ * Only what a visitor needs to decide. The old set ("Vision", "Sign in") sent
+ * people to a page about the idea instead of the product; these three anchor
+ * to the sections that actually answer "how does this work?" and "is it
+ * finished?".
+ */
 const NAV_ITEMS = [
-  { href: "/vision", label: "Vision" },
-  { href: "/login", label: "Sign in" },
+  { href: "/#example", label: "Example" },
+  { href: "/#faq", label: "FAQ" },
+  { href: "/beta", label: "Beta" },
 ] as const;
 
 /**
- * Site header: text logo, nav, "Request access" button and a mobile menu
+ * Site header: text logo, nav, "Start learning" button and a mobile menu
  * built with plain React state — no extra libraries. The menu closes on
  * route change (via `key`) and on Escape; focus returns to the toggle
  * because the toggle button itself never unmounts.
@@ -30,10 +37,13 @@ export function SiteHeader() {
       <Container className="flex h-14 items-center justify-between gap-4">
         <Link
           href="/"
-          className="text-base font-semibold tracking-tight"
+          className="flex items-baseline gap-2 text-base tracking-tight"
           aria-label="Rismon home"
         >
-          Rismon
+          <span className="font-semibold">Rismon</span>
+          <span className="hidden font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted sm:inline">
+            beta
+          </span>
         </Link>
 
         <nav aria-label="Main" className="hidden items-center gap-6 md:flex">
@@ -47,8 +57,8 @@ export function SiteHeader() {
               {item.label}
             </Link>
           ))}
-          <ButtonLink href="/beta" size="sm">
-            Request access
+          <ButtonLink href="/login" size="sm">
+            Start learning
           </ButtonLink>
         </nav>
 
@@ -82,12 +92,12 @@ export function SiteHeader() {
               </Link>
             ))}
             <ButtonLink
-              href="/beta"
+              href="/login"
               size="sm"
               className="mt-2 self-start"
               onClick={() => setOpen(false)}
             >
-              Request access
+              Start learning
             </ButtonLink>
           </Container>
         </div>

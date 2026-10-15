@@ -15,6 +15,13 @@ export const goalCreateSchema = z
     target_outcome: z.string().max(500).nullable().optional(),
     deadline: z.iso.date().nullable().optional(),
     hours_per_week: z.number().int().min(1).max(80).nullable().optional(),
+    /**
+     * Optional catalog ambition this journey pursues. Without it the goal
+     * exists but no roadmap or diagnostic can be attached (the learner would
+     * be stuck at "no-ambition"), so the dashboard lets them link one later
+     * via PATCH /api/goals/[id]/ambition.
+     */
+    ambition_id: z.string().min(1).max(120).nullable().optional(),
   })
   .strict();
 

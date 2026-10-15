@@ -14,6 +14,7 @@ import {
   updateGoalForLearner,
   updateGoalStatusForLearner,
 } from "@/server/data/goals";
+import { requireAmbition } from "@/server/services/ambitions";
 import type { GoalRow } from "@/server/db/schema";
 import type {
   GoalCreateInput,
@@ -48,11 +49,21 @@ async function requireOwnedGoal(
 /**
  * The server chooses the status: 'active' when the learner has no active
  * goal yet, otherwise 'paused'. Clients cannot choose.
+ *
+ * An `ambition_id` is validated against the catalog BEFORE the insert, so a
+ * goal is never created pointing at an ambition that does not exist. Both
+ * values are written in the same insert — a goal and its ambition link are
+ * one fact, not two writes that can half-complete (contrast
+ * `services/onboarding.ts`, which needs two tables and therefore a
+ * transaction).
  */
 export async function createGoal(
   learnerId: string,
   input: GoalCreateInput,
 ): Promise<GoalRow> {
+  if (input.ambition_id) {
+    await requireAmbition(input.ambition_id);
+  }
   const hasActive = (await countActiveGoals(learnerId)) > 0;
   const status: GoalStatus = hasActive ? "paused" : "active";
 
@@ -65,6 +76,7 @@ export async function createGoal(
       status,
       deadline: input.deadline ?? null,
       hoursPerWeek: input.hours_per_week ?? null,
+      ambitionId: input.ambition_id ?? null,
     });
   } catch (error) {
     if (isUniqueViolation(error)) {

@@ -2,11 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { FormError, INPUT_CLASS } from "@/components/ui/form";
 import type { AmbitionDto } from "@/server/http/dto";
 import { startJourneyAction } from "./actions";
-
-const INPUT_CLASS =
-  "rounded-md border border-border bg-transparent px-3 py-2 text-base outline-none";
 
 type Props = {
   ambitions: AmbitionDto[];
@@ -142,14 +140,7 @@ export function OnboardingForm({ ambitions }: Props) {
         </label>
       </div>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {error}
-        </p>
-      )}
+      {error && <FormError message={error} />}
 
       <Button type="submit" disabled={loading}>
         {loading ? "Starting your journey…" : "Start my journey"}

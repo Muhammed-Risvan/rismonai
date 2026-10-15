@@ -7,11 +7,9 @@ vi.mock("@/lib/supabase/server", () => ({
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { GET as getProfile, PATCH as patchProfile } from "@/app/api/profile/route";
 import { GET as getGoals, POST as postGoal } from "@/app/api/goals/route";
-import {
-  GET as getGoal,
-  PATCH as patchGoal,
-} from "@/app/api/goals/[id]/route";
+import { PATCH as patchGoalAmbition } from "@/app/api/goals/[id]/ambition/route";
 import { POST as postGoalStatus } from "@/app/api/goals/[id]/status/route";
+import { GET as getDiagnostic, POST as postDiagnostic } from "@/app/api/diagnostic/route";
 
 const GOAL_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -65,14 +63,10 @@ describe("route handlers without a session", () => {
     await expect401(await postGoal(jsonRequest("POST", { title: "Learn SQL" })));
   });
 
-  it("GET /api/goals/[id] returns 401", async () => {
-    await expect401(await getGoal(new Request("http://localhost/api/test"), context()));
-  });
-
-  it("PATCH /api/goals/[id] returns 401 before validating the body", async () => {
+  it("PATCH /api/goals/[id]/ambition returns 401 before validating the body", async () => {
     await expect401(
-      await patchGoal(
-        jsonRequest("PATCH", { title: "Renamed" }),
+      await patchGoalAmbition(
+        jsonRequest("PATCH", { ambitionId: "cloud-security-engineer" }),
         context(),
       ),
     );
@@ -84,6 +78,16 @@ describe("route handlers without a session", () => {
         jsonRequest("POST", { status: "active" }),
         context(),
       ),
+    );
+  });
+
+  it("GET /api/diagnostic returns 401", async () => {
+    await expect401(await getDiagnostic());
+  });
+
+  it("POST /api/diagnostic returns 401 before validating the body", async () => {
+    await expect401(
+      await postDiagnostic(jsonRequest("POST", { type: "submit", response: 42 })),
     );
   });
 });

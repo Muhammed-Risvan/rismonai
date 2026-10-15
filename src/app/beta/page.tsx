@@ -37,10 +37,10 @@ export default function BetaPage() {
               arrives.
             </p>
             <p>
-              Today the beta includes an account, goals and a dashboard. The
-              learning engine and the first subject — networking fundamentals —
-              are in active development, so expect rough edges and missing
-              pieces.
+              Today the beta includes an account, goals, a starting diagnostic and a
+              dashboard. The teaching engine — lessons, roadmaps and revision
+              — is still in active development, so expect rough edges and
+              missing pieces.
             </p>
             <p>
               In return for trying it early, we ask for honest feedback about
@@ -49,20 +49,25 @@ export default function BetaPage() {
           </div>
 
           <div className="mt-10 rounded-lg border border-border bg-surface p-8">
-            <h2 className="text-xl font-semibold">Request access opens soon</h2>
+            <h2 className="text-xl font-semibold">Create an account</h2>
             <p className="mt-2 text-sm leading-6 text-muted">
-              The request form is not live yet. Until then, email us and we
-              will get back to you when a spot opens.
+              Accounts are open during the beta. You can delete your data at
+              any time, and we do not send marketing email.
             </p>
             <p className="mt-5">
+              <ButtonLink href="/login">Create your account</ButtonLink>
+            </p>
+            <p className="mt-4 text-sm text-muted">
+              Would rather ask first?{" "}
               {emailHref ? (
-                <ButtonLink href={emailHref}>
-                  Email us to request access
-                </ButtonLink>
+                <a
+                  href={emailHref}
+                  className="text-accent underline underline-offset-4"
+                >
+                  Email {siteConfig.contactEmail}
+                </a>
               ) : (
-                <span className="text-sm text-muted">
-                  Email {siteConfig.contactEmail} once the inbox is live.
-                </span>
+                <span>Email {siteConfig.contactEmail} once the inbox is live.</span>
               )}
             </p>
             <p className="mt-4 font-mono text-xs text-muted">

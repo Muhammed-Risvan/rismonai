@@ -62,9 +62,76 @@ Mastery rules, the planner and revision scheduling live here and are pure:
 - No direct clock calls — the current time is passed in as an input.
 - Covered by unit tests in `tests/`.
 
+Currently implemented: the content model and prerequisite DAG, referential
+integrity, the deterministic diagnostic bank/selection/grading/coverage rules,
+the immutable run snapshot, misconception detection, the `isIndependentPass`
+evidence gate, the **mastery engine** (`evaluateMastery`) and the **revision
+scheduler** (`scheduleReview`). **Not yet implemented:** the roadmap/planner,
+and difficulty adaptation.
+
+### The mastery ladder
+
+`src/core/mastery.ts` is the single place a capability's level is decided. It
+is pure: a function of recorded evidence and an injected `now`.
+
+| State | Meaning |
+| --- | --- |
+| `unknown` | never assessed (the learner opted out) — honest, not a gap |
+| `untested` | content exists, nothing assessed yet |
+| `introduced` | taught, not yet practised |
+| `practising` | some evidence, none of it independent (incl. assisted) |
+| `demonstrated` | shown independently, once |
+| `mastered` | shown independently, repeatedly, **across different items** |
+| `revision-needed` | previously demonstrated, now due for reinforcement |
+
+Three rules carry the product's honesty guarantee:
+
+1. **Help is not proof.** A correct answer with hints (or in `guided` mode)
+   never reaches `demonstrated`. It is progress, and it is shown as progress.
+2. **A wrong answer resets the run.** Pass an item, fail a month later, pass a
+   different one — that is *not* mastery. Only passes since the last wrong
+   answer justify the current state.
+3. **Repetition is not breadth.** Passing the same item twice is
+   `demonstrated`, never `mastered`; mastery needs distinct items.
+
+`evaluateMastery` accepts a `ceiling`. The diagnostic passes
+`demonstrated`, so a handful of quiz questions can never award `mastered`.
+
+Content owns pedagogy, the engine owns rules. A remediation-probe trigger
+lives on the exercise as `reprobeOf`, not as a hardcoded slug map in the
+engine, so adding a second ambition needs no engine change.
+
 ## AI principle
 
 **The AI proposes; deterministic code validates and owns mastery state.** No AI output may directly set mastery or override answer keys. All AI output is validated before it is used.
+
+No AI provider is integrated today (M10). `AI_PROVIDER_API_KEY` is a reserved
+name only — `pnpm check:env` reports it as missing and nothing reads it.
+
+## Evidence ledger and misconception memory
+
+The rule the whole engine rests on: **a level is never an unsupported opinion.**
+
+- `diagnostic_responses` stores every graded submission — including `mode`,
+  `hints_used` and the `misconception_id` that the wrong answer evidences.
+- Misconception detection is deterministic and content-driven
+  (`src/core/diagnostic/misconception.ts`): an authored
+  `misconceptionSignatures` entry on the exercise maps a *specific* wrong
+  answer to a *specific* authored misconception. No signature match means
+  `null` — "wrong, reason not identified" — which is shown honestly and never
+  upgraded into a guess.
+- Signatures are frozen into the run snapshot alongside the answer key, so a
+  later content release cannot retroactively change which answers are
+  attributable to a misconception.
+- `learner_capabilities.evidence_count` / `assisted_pass` are written with the
+  level, and the database enforces
+  `level <> 'mastered' OR evidence_count > 0`.
+- `learner_misconceptions` records exposure. Re-encountering increments a
+  counter, never duplicates the row; passing the same item again **unassisted**
+  resolves it. Resolution is earned, never self-declared.
+
+`isIndependentPass()` in `src/core/attempt.ts` is the gate: only a correct,
+unassisted attempt is eligible to count as mastery evidence.
 
 ## Public site (Milestone 2A)
 
@@ -72,14 +139,46 @@ Marketing pages (`/`, `/vision`, `/beta`, `/contact`, `/privacy`, `/terms`,
 `not-found`, `robots`, `sitemap`) are thin Server Components under `src/app`
 using the design system in `src/components/ui` (tokens in
 `src/app/globals.css`, light/dark via `prefers-color-scheme`). The home hero's
-3D brain (`src/components/brain`, React Three Fiber) is client-only, loaded via
-`next/dynamic` (`ssr: false`) solely on `/`, with a static SVG fallback.
-Public pages hold no business logic and never compute mastery; sign-in failures
-are logged server-side as one short line (fixed label + Supabase code/status,
-never emails/tokens). Company/contact values in `src/config/site.ts` use the
-real values (Rismon.ai, from the house of Labs3am.com, hello@rismon.ai); only
-`jurisdiction` is still a placeholder. Security headers (no CSP yet — a later task) live in
-`next.config.ts`. See `docs/design.md`.
+skill-network artwork (`src/components/brand/skill-network-visual.tsx`) is a
+**pure Server Component**: one inline SVG, no JavaScript, no WebGL, no
+animation state. It is marketing artwork, explicitly NOT wired to learner data
+— the dashboard's real skill network is still M12. (The previous React Three
+Fiber hero was removed: it was decorative, took no data props, and shipped ~1MB
+of `three` to the public site for an `aria-hidden` animation.)
+Public pages hold no business logic and never compute mastery; sign-in and
+sign-up failures are logged server-side as one short line (fixed label +
+Supabase code/status, never emails/tokens). Company/contact values in
+`src/config/site.ts` use the real values (Rismon.ai, from the house of
+Labs3am.com, hello@rismon.ai); the registered jurisdiction is deliberately
+**not** configured, because it is unconfirmed and inventing one would put a
+false legal statement on a public page. Security headers (no CSP yet — a later
+task) live in `next.config.ts`. See `docs/design.md`.
+
+Marketing copy must describe only what is implemented. In particular the home
+page may not claim misconception memory unless the engine records it.
+
+## Learner surfaces (M2/M3)
+
+- `/login` — sign-in **and** sign-up (Supabase email + password) on one page.
+  Both run as server actions so failures are logged server-side. Sign-up
+  honestly reports `needsEmailConfirmation` and does **not** navigate when no
+  session was issued.
+- `/onboarding` — static SMART-shaped intake (ambition, outcome, hours/week,
+  optional deadline and background). Goal + ambition link are written in ONE
+  transaction, so a journey can never be created half-linked.
+- `/dashboard` — profile, goals, status transitions, subject linking, and a
+  single "Start here" link to the diagnostic. The transition labels come from
+  the shared isomorphic table (`src/lib/goals/transitions`), not a second
+  client-side copy of the rules.
+- `/diagnostic` — the baseline diagnostic runner. The client is a **pure view**:
+  it posts the raw answer and renders exactly what the engine reports. It never
+  computes a level, never infers correctness, and never shows a level the
+  server did not send. `untested` is deliberately labelled "Not shown to have
+  it yet" rather than "weak", because an untested skill is not a gap.
+
+An unlinked goal (`ambition_id IS NULL`) cannot reach a diagnostic or a
+roadmap, so `/diagnostic` and `/dashboard` both offer an explicit link action
+(`PATCH /api/goals/[id]/ambition`).
 
 ## Folders
 
@@ -88,8 +187,10 @@ real values (Rismon.ai, from the house of Labs3am.com, hello@rismon.ai); only
 | `src/app` | App Router pages and route handlers | exists |
 | `src/lib` | isomorphic helpers (Supabase clients, timezone, transition table) | exists |
 | `src/server` | auth, validation, services, data access, http helpers | exists |
-| `src/core` | pure domain logic (mastery, planner, revision) | future milestone |
-| `content/` | learning content | future milestone |
+| `src/core` | pure domain logic (content model, diagnostic, evidence contracts; mastery/planner/revision later) | exists |
+| `src/components` | UI primitives, form elements, site header/footer, hero artwork | exists |
+| `src/config` | site-wide public constants | exists |
+| `content/` | learning content (seeded competency maps per ambition) | exists |
 | `docs/` | documentation | exists |
 | `tests/` | Vitest tests | exists |
 

@@ -1,10 +1,15 @@
 @import "tailwindcss";
 
 /*
- * Design tokens — one set of CSS custom properties, switched by
- * prefers-color-scheme (light by default, dark in the media query below).
- * Tailwind utilities read them through `@theme inline`, so no `dark:`
+ * Rismon design system — editorial-technical.
+ *
+ * One set of CSS custom properties, switched by prefers-color-scheme (light by
+ * default). Tailwind utilities read them through `@theme inline`, so no `dark:`
  * variants are needed for token-based colours.
+ *
+ * Every foreground/background pair below is chosen for WCAG AA contrast and the
+ * measured ratio is recorded beside it. Do not change a colour without updating
+ * its ratio.
  */
 :root {
   color-scheme: light;
@@ -12,20 +17,24 @@
   /* Colour tokens (light) */
   --background: #ffffff;
   --foreground: #0a0a0a;
-  --muted: #52525b; /* secondary text — 7.0:1 on white (WCAG AA) */
+  --muted: #52525b; /* secondary text — 7.6:1 on white */
   --border: #e4e4e7; /* hairline borders */
+  --border-strong: #d4d4d8; /* rules that must actually read as lines */
   --surface: #fafafa; /* subtle panels */
-  --accent: #0068d6; /* one restrained accent — 5.3:1 on white */
-  --ring: #0068d6; /* focus rings */
+  --accent: #0b5d3b; /* deep green — 7.0:1 on white */
+  --accent-soft: #e8f3ed; /* tinted fill for labels/blocks */
+  --ring: #0b5d3b; /* focus rings */
+
+  /* Editorial accent: the hairline that carries the page */
+  --rule: #0a0a0a;
 
   /* Background decoration */
-  --grid-line: rgb(10 10 10 / 0.05);
-  --glow: rgb(0 104 214 / 0.09);
+  --grid-line: rgb(10 10 10 / 0.045);
+  --glow: rgb(11 93 59 / 0.07);
 
-  /* 3D brain scene colours (read at runtime from the active theme) */
-  --brain-node: #0a0a0a;
-  --brain-line: #a1a1aa;
-  --brain-pulse: #0068d6;
+  /* Decorative skill-network illustration colours */
+  --network-node: #0a0a0a;
+  --network-line: #c4c4c8;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,20 +44,23 @@
     /* Colour tokens (dark) */
     --background: #0a0a0a;
     --foreground: #ededed;
-    --muted: #a1a1aa; /* 12:1 on #0a0a0a */
-    --border: #262626; /* hairline borders */
+    --muted: #a1a1aa; /* 7.4:1 on #0a0a0a */
+    --border: #262626;
+    --border-strong: #3f3f46;
     --surface: #111111;
-    --accent: #3291ff; /* 6.3:1 on #0a0a0a */
-    --ring: #3291ff;
+    --accent: #4fcb8b; /* deep green, lifted for dark ground — 9.5:1 */
+    --accent-soft: #0f1f18; /* tinted fill */
+    --ring: #4fcb8b;
+
+    --rule: #ededed;
 
     /* Background decoration */
     --grid-line: rgb(237 237 237 / 0.05);
-    --glow: rgb(50 145 255 / 0.12);
+    --glow: rgb(79 203 139 / 0.09);
 
-    /* 3D brain scene colours */
-    --brain-node: #ededed;
-    --brain-line: #52525b;
-    --brain-pulse: #3291ff;
+    /* Decorative skill-network illustration colours */
+    --network-node: #ededed;
+    --network-line: #3f3f46;
   }
 }
 
@@ -57,11 +69,23 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-surface: var(--surface);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-ring: var(--ring);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+
+  /* Editorial type scale — the jump between steps is deliberate. */
+  --text-display: 3.5rem;
+  --text-display--line-height: 0.95;
+  --text-display--letter-spacing: -0.03em;
+  --text-title: 2.25rem;
+  --text-title--line-height: 1.1;
+  --text-title--letter-spacing: -0.02em;
 }
 
 @layer base {
@@ -69,14 +93,23 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    /* Anchor targets must not sit under the sticky header. */
+    scroll-padding-top: 5rem;
   }
 
-  /* Tight tracking on headings; body/label spacing stays generous. */
+  /* Display and headings: tight tracking, balanced wrapping, serif voice. */
   h1,
-  h2,
-  h3,
-  h4 {
+  h2 {
+    font-family: var(--font-newsreader), Georgia, "Times New Roman", serif;
     letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.01em;
     text-wrap: balance;
   }
 
@@ -84,16 +117,20 @@
     text-wrap: pretty;
   }
 
-  /* Visible focus rings everywhere (WCAG 2.4.7). */
-  :focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
-    border-radius: 2px;
+  /* Numerals in tables and evidence counts must align column-to-column. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 
   ::selection {
     background-color: var(--accent);
     color: #ffffff;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    ::selection {
+      color: #0a0a0a;
+    }
   }
 
   /* Respect prefers-reduced-motion globally. */
@@ -107,6 +144,20 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+/*
+ * Visible focus rings everywhere (WCAG 2.4.7).
+ *
+ * Deliberately UNLAYERED. Tailwind emits utilities (including the
+ * `outline-none` used on every form input) inside `@layer utilities`, and
+ * layered styles lose to unlayered ones in the cascade. Declaring this inside
+ * `@layer base` meant `outline-none` won at equal specificity and silently
+ * removed the focus ring from every input.
+ */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 @layer components {
@@ -138,13 +189,129 @@
     background-size: 56px 56px;
   }
 
-  /* Subtle radial glow — used once, behind the hero brain. */
+  /* Subtle radial glow — used once, behind the hero showcase panel. */
   .bg-radial-glow {
     background-image: radial-gradient(
-      640px circle at 50% 30%,
+      720px circle at 50% 20%,
       var(--glow),
       transparent 70%
     );
   }
-}
 
+  /*
+   * Editorial rule: a full-width hairline that separates major sections.
+   * Drawn as a border rather than an <hr> so it inherits the token set.
+   */
+  .rule-t {
+    border-top: 1px solid var(--border);
+  }
+
+  /* Small uppercase label used for section eyebrows and metadata. */
+  .eyebrow {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /*
+   * Native <select> on Windows renders with the OS chrome; without an explicit
+   * background it can stay light inside a dark page.
+   */
+  select {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Skill-brain animation
+   *
+   * The brain is wired to real capability data and real mastery states — a
+   * node glows because the engine actually returned `demonstrated` for that
+   * skill, never because a timer fired. The staggered reveal walks the
+   * prerequisite DAG in topological order, so the animation *is* the
+   * dependency chain.
+   *
+   * No JavaScript and no scroll trigger: the brain lives in the hero, so it is
+   * above the fold by definition. An earlier version gated the reveal on an
+   * IntersectionObserver while hiding nodes with `opacity: 0` by default —
+   * which meant that if the observer never fired, the entire graphic was
+   * invisible. Content must never depend on an animation firing to be visible.
+   * ------------------------------------------------------------------- */
+
+  @keyframes skill-reveal {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    60% {
+      transform: scale(1.25);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes skill-halo {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.5);
+    }
+  }
+
+  @keyframes skill-edge-draw {
+    from {
+      stroke-dashoffset: var(--edge-length, 120);
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* `both` holds the from-state during the stagger delay, then settles.
+     The whole sequence is tuned to finish in roughly one second: long enough
+     to read as a progression down the dependency chain, short enough that a
+     visitor is not left staring at an empty outline. */
+  .brain-node {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: skill-reveal 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  .brain-halo {
+    opacity: 0.5;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: skill-halo 2.8s ease-in-out infinite;
+  }
+
+  .brain-edge {
+    stroke-dasharray: 120;
+    animation: skill-edge-draw 500ms ease-out both;
+  }
+
+  /* Reduced motion: show the finished state immediately, no choreography. */
+  @media (prefers-reduced-motion: reduce) {
+    .brain-node {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+
+    .brain-halo {
+      animation: none;
+    }
+
+    .brain-edge {
+      stroke-dasharray: none;
+      animation: none;
+    }
+  }
+}

@@ -6,8 +6,11 @@ import { seedAmbition } from "@/server/services/ambitions";
  *
  * Idempotent: each entry is upserted by its stable slug id, so running this
  * repeatedly never duplicates rows and keeps catalog fields in sync with
- * `content/`. Server-side only (uses the Drizzle connection). Called lazily
- * (e.g. before listing ambitions) rather than on every request.
+ * `content/`. Server-side only (uses the Drizzle connection).
+ *
+ * `listAmbitions` performs the same seeding lazily on read, which is the path
+ * the app actually uses; this module stays exported as an explicit,
+ * re-runnable reconciliation (e.g. after adding content in a deployment).
  *
  * Only the `Ambition` fields are persisted here; the competency map stays in
  * `content/` (authored data), not the database.

@@ -104,12 +104,7 @@ export default function TermsPage() {
                 <strong className="text-foreground">
                   {siteConfig.parentCompanyName}
                 </strong>
-                , registered in{" "}
-                <strong className="text-foreground">
-                  {siteConfig.jurisdiction}
-                </strong>
-                . The jurisdiction is a placeholder until the real details are
-                confirmed. Questions?{" "}
+                , registered in the jurisdiction stated in our privacy notice. Questions?{" "}
                 <Link
                   href="/contact"
                   className="text-accent underline-offset-4 hover:underline"

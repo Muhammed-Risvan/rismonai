@@ -33,7 +33,27 @@ function collectSourceFiles(dir: string, acc: string[] = []): string[] {
 const FORBIDDEN_IMPORT =
   /from\s+["'](?:postgres|drizzle-orm[^"']*|@supabase[^"']*|next(?:\/[^"']*)?|server-only|node:(?:http|https|net|dgram|tls)|node:fs|node:child_process)["']/;
 
-const FORBIDDEN_CLOCK = /\bDate\.now\s*\(|\bnew\s+Date\s*\(/;
+/**
+ * Direct clock access. `Date.now()` reads the clock, and so does `new Date()`
+ * with no arguments. `new Date(<number>)` does NOT — it converts an already
+ * injected epoch value — so it is explicitly allowed, letting pure modules
+ * return Dates built from injected timestamps.
+ */
+const FORBIDDEN_CLOCK = /\bDate\.now\s*\(|\bnew\s+Date\s*\(\s*\)/;
+
+/**
+ * Strips comments before scanning.
+ *
+ * Prose about the rule is not a violation of it — a doc comment saying "we never
+ * call `new Date()`" used to fail this very test. Two forms are removed: block
+ * comments, and `//` line comments where the slashes are at line start or
+ * preceded by whitespace (so `https://` inside a string survives).
+ */
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[\s(])(\/\/[^\n]*)/g, "$1");
+}
 
 describe("pure core/content modules", () => {
   const files = PURE_ROOTS.flatMap((root) => collectSourceFiles(root));
@@ -56,11 +76,25 @@ describe("pure core/content modules", () => {
   it("contains no direct clock access (time must be injected)", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, "utf8");
+      const source = stripComments(readFileSync(file, "utf8"));
       if (FORBIDDEN_CLOCK.test(source)) {
         offenders.push(file);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("still catches a real clock read written as code, not prose", () => {
+    // Guards against the comment stripper becoming a loophole.
+    expect(
+      FORBIDDEN_CLOCK.test(stripComments("const t = new Date();")),
+    ).toBe(true);
+    expect(FORBIDDEN_CLOCK.test(stripComments("const t = Date.now();"))).toBe(
+      true,
+    );
+    // Converting an already-injected value stays allowed.
+    expect(FORBIDDEN_CLOCK.test(stripComments("const t = new Date(0);"))).toBe(
+      false,
+    );
   });
 });

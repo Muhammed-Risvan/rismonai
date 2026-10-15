@@ -30,6 +30,22 @@ import {
 import { seedAmbitionCatalog } from "@/server/services/seed-catalog";
 import { startJourney } from "@/server/services/onboarding";
 import {
+  getDiagnosticState,
+  optOut,
+  reassess,
+  startRun,
+  submitAnswer,
+} from "@/server/services/diagnostic";
+import { selectResponsesForRun } from "@/server/data/diagnostic-responses";
+import { selectRunsByLearner } from "@/server/data/diagnostic-runs";
+import { selectCapabilitiesForLearner } from "@/server/data/learner-capabilities";
+import {
+  recordMisconceptionEncounter,
+  resolveMisconception,
+  selectMisconceptionsForLearner,
+  selectOpenMisconceptions,
+} from "@/server/data/learner-misconceptions";
+import {
   ConflictError,
   InvalidTransitionError,
   NotFoundError,
@@ -617,6 +633,760 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
     await changeGoalStatus(userB.id, bJourney.id, { status: "archived" });
   });
 
+  // ==========================================================================
+  // M3 — baseline diagnostic (state machine, grading, locks, history).
+  // Order-dependent like the rest of this suite: A and B both start with
+  // no active journey (the preceding tests archived them), the catalog is
+  // already seeded, and the cascade test below stays last.
+  // ==========================================================================
+
+  // The seed map's assessment bank (the guided practice item is excluded
+  // by construction; the boundary probe is conditional on the MCQ).
+  const ITEM = {
+    mcq: "exercise-shared-responsibility-mcq",
+    boundary: "exercise-shared-boundary-check",
+    identity: "exercise-identity-allowlist-assessment",
+    network: "exercise-network-exposure-assessment",
+    detection: "exercise-detection-signal-assessment",
+  } as const;
+  let runA1 = ""; // A's completed baseline run
+  let runB1 = ""; // B's opted-out run
+
+  it("M3: startRun without an active journey is NotFound", async () => {
+    await ensureProfile(userA.id);
+    // Precondition of this block: the earlier suites archived A's journey.
+    const active = (await listGoals(userA.id)).find(
+      (g) => g.status === "active",
+    );
+    expect(active).toBeUndefined();
+    await expect(startRun(userA.id)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("M3: startRun is idempotent and the client DTO never carries answer keys", async () => {
+    await ensureProfile(userA.id);
+    const journey = await startJourney(userA.id, {
+      ambitionId: "cloud-security-engineer",
+      outcome: "Baseline triage",
+      hoursPerWeek: 5,
+    });
+
+    // Linked but not started: the state machine says so honestly.
+    const before = await getDiagnosticState(userA.id);
+    expect(before.status).toBe("not_started");
+    if (before.status === "not_started") {
+      expect(before.goalId).toBe(journey.id);
+      expect(before.ambitionId).toBe("cloud-security-engineer");
+    }
+
+    const run1 = await startRun(userA.id);
+    expect(run1.status).toBe("in_progress");
+    expect(run1.ambitionId).toBe("cloud-security-engineer");
+    expect(run1.goalId).toBe(journey.id);
+    expect(run1.contentVersion).toBe("0.1.0");
+    runA1 = run1.id;
+
+    // Server-only fields must never be part of the client DTO.
+    expect(run1).not.toHaveProperty("itemsSnapshot");
+    expect(run1).not.toHaveProperty("itemIds");
+    expect(run1).not.toHaveProperty("requiredCapabilityIds");
+    expect(run1).not.toHaveProperty("learnerId");
+    expect(JSON.stringify(run1)).not.toContain('"accepted"');
+
+    // Idempotent per (learner, ambition): a second start returns the same run.
+    const run2 = await startRun(userA.id);
+    expect(run2.id).toBe(runA1);
+
+    // Resume: deterministic next item, empty progress, full bank size.
+    const state = await getDiagnosticState(userA.id);
+    expect(state.status).toBe("in_progress");
+    if (state.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    expect(state.run.id).toBe(runA1);
+    expect(state.total).toBe(5);
+    expect(state.answered).toBe(0);
+    expect(state.nextItem?.itemId).toBe(ITEM.mcq);
+  });
+
+  it("M3: submitAnswer is ownership-scoped, grades from the snapshot, first-answer-wins", async () => {
+    const before = await getDiagnosticState(userA.id);
+    if (before.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = before.run.id;
+
+    // B cannot submit to A's run: foreign run → same NotFound as missing.
+    await expect(
+      submitAnswer(userB.id, { runId, itemId: ITEM.mcq, response: "you" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    // An item outside this run's frozen bank is never trusted, even for A.
+    await expect(
+      submitAnswer(userA.id, {
+        runId,
+        itemId: "exercise-not-in-bank",
+        response: "you",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    // Wrong first answer: graded false against the snapshot's accepted
+    // answers, and the wrong answer triggers the conditional remedial probe.
+    const first = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.mcq,
+      response: "provider",
+    });
+    expect(first.duplicate).toBe(false);
+    expect(first.correct).toBe(false);
+    expect(first.complete).toBe(false);
+    expect(first.nextItem?.itemId).toBe(ITEM.boundary);
+
+    // First-answer-wins: a later correct answer must NOT change the grade.
+    const dup = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.mcq,
+      response: "you",
+    });
+    expect(dup.duplicate).toBe(true);
+    expect(dup.correct).toBe(false); // canonical row: the FIRST answer's grade
+
+    // The persisted row really is the first one (proven on a fresh connection).
+    const raw = createRawClient();
+    try {
+      const rows = (await raw`
+        SELECT response, correct FROM diagnostic_responses
+        WHERE run_id = ${runId} AND item_id = ${ITEM.mcq}`) as unknown as {
+        response: string;
+        correct: boolean;
+      }[];
+      expect(rows.length).toBe(1);
+      expect(rows[0].response).toBe("provider");
+      expect(rows[0].correct).toBe(false);
+    } finally {
+      await raw.end();
+    }
+
+    // Resume re-derives the same next item from persisted answers only.
+    const after = await getDiagnosticState(userA.id);
+    if (after.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    expect(after.answered).toBe(1);
+    expect(after.nextItem?.itemId).toBe(ITEM.boundary);
+  });
+
+  it("M3: completing the run writes differentiated levels, never mastered, and freezes the run", async () => {
+    const before = await getDiagnosticState(userA.id);
+    if (before.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = before.run.id;
+
+    // Remedial probe answered wrong (still covers the capability)…
+    await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.boundary,
+      response: "provider",
+    });
+    // …then the remaining capabilities answered correctly.
+    const identity = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.identity,
+      response: "read-only",
+    });
+    expect(identity.complete).toBe(false); // coverage gate: 2 of 4 caps
+    expect(identity.nextItem?.itemId).toBe(ITEM.network);
+    const network = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.network,
+      response: "private-only",
+    });
+    expect(network.complete).toBe(false); // coverage gate: 3 of 4 caps
+    expect(network.nextItem?.itemId).toBe(ITEM.detection);
+    const last = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.detection,
+      response: "sign-in log",
+    });
+    expect(last.complete).toBe(true);
+    expect(last.nextItem).toBeNull();
+
+    // Terminal: further submits are rejected with Conflict.
+    await expect(
+      submitAnswer(userA.id, { runId, itemId: ITEM.mcq, response: "you" }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    // Per-capability triage derived from THIS run's answers only, by the real
+    // mastery engine: answered wrongly → practising; answered correctly →
+    // demonstrated (capped — a diagnostic can never award `mastered`).
+    const state = await getDiagnosticState(userA.id);
+    expect(state.status).toBe("complete");
+    if (state.status !== "complete") {
+      throw new Error("expected complete state");
+    }
+    expect(state.run.id).toBe(runId);
+    expect(state.run.completedAt).not.toBeNull();
+    const levels = new Map(state.levels.map((l) => [l.capabilityId, l.level]));
+    expect(state.levels).toHaveLength(4);
+    expect(levels.get("cloud-shared-responsibility")).toBe("practising");
+    expect(levels.get("identity-and-access-basics")).toBe("demonstrated");
+    expect(levels.get("network-security-basics")).toBe("demonstrated");
+    expect(levels.get("logging-and-monitoring")).toBe("demonstrated");
+    expect(state.levels.some((l) => l.level === "mastered")).toBe(false);
+    expect(state.levels.every((l) => l.runId === runId)).toBe(true);
+    expect(state.levels.every((l) => l.source === "diagnostic")).toBe(true);
+
+    // A demonstrated capability is always scheduled for a later review.
+    expect(
+      state.levels.every((l) => l.reviewAt !== null || l.level === "practising"),
+    ).toBe(true);
+
+    // Evidence receipts: a level is never an unsupported opinion.
+    const practised = state.levels.find(
+      (l) => l.capabilityId === "cloud-shared-responsibility",
+    );
+    expect(practised?.evidenceCount).toBe(0);
+    expect(practised?.assistedPass).toBe(false);
+    const correct = state.levels.find(
+      (l) => l.capabilityId === "identity-and-access-basics",
+    );
+    expect(correct?.evidenceCount).toBe(1);
+    expect(correct?.assistedPass).toBe(false);
+  });
+
+  it("M3: a wrong answer is remembered WITH its reason, and the reason is exposed", async () => {
+    const before = await getDiagnosticState(userA.id);
+    if (before.status !== "complete") {
+      throw new Error("expected complete state");
+    }
+    const runId = before.run.id;
+
+    // "provider" on the shared-responsibility item is an authored signature for
+    // a specific misunderstanding — not just a false flag.
+    const wrong = await submitAnswer(userA.id, {
+      runId,
+      itemId: ITEM.mcq,
+      response: "provider",
+    }).catch((error: unknown) => error);
+
+    // The run is already terminal, so the submit is rejected — but the
+    // signature must still be resolvable in content for the assertion below.
+    expect(wrong).toBeInstanceOf(ConflictError);
+
+    const rows = await selectMisconceptionsForLearner(userA.id);
+    const provider = rows.find(
+      (r) => r.misconceptionId === "misconception-provider-secures-everything",
+    );
+    expect(provider).toBeDefined();
+    expect(provider?.capabilityId).toBe("cloud-shared-responsibility");
+    expect(provider?.timesEncountered).toBeGreaterThanOrEqual(1);
+    expect(provider?.resolvedAt).toBeNull();
+
+    // A repeated encounter increments, never duplicates the row.
+    const beforeCount = rows.length;
+    await recordMisconceptionEncounter(
+      {
+        learnerId: userA.id,
+        capabilityId: provider!.capabilityId,
+        misconceptionId: provider!.misconceptionId,
+        lastItemId: provider!.lastItemId,
+      },
+      getDb(),
+    );
+    const after = await selectMisconceptionsForLearner(userA.id);
+    expect(after).toHaveLength(beforeCount);
+    const bumped = after.find((r) => r.id === provider!.id);
+    expect(bumped!.timesEncountered).toBe(provider!.timesEncountered + 1);
+
+    // Resolution is earned, not self-declared.
+    await resolveMisconception(
+      userA.id,
+      "misconception-provider-secures-everything",
+      getDb(),
+    );
+    const resolved = await selectOpenMisconceptions(userA.id, getDb());
+    expect(
+      resolved.some(
+        (r) =>
+          r.misconceptionId === "misconception-provider-secures-everything",
+      ),
+    ).toBe(false);
+  });
+
+  it("M3: a learner cannot read or write another learner's misconception history", async () => {
+    const rowsA = await selectMisconceptionsForLearner(userA.id);
+    expect(rowsA.length).toBeGreaterThan(0);
+    // B has no rows of their own; the query is scoped by learnerId.
+    const rowsB = await selectMisconceptionsForLearner(userB.id);
+    expect(rowsB).toHaveLength(0);
+
+    // Resolution is scoped too: resolving A's misconception as B is a no-op.
+    const resolved = await resolveMisconception(
+      userB.id,
+      "misconception-provider-secures-everything",
+      getDb(),
+    );
+    expect(resolved).toBeUndefined();
+  });
+
+  it("M3: two learners are isolated — separate runs, states, and ownership", async () => {
+    await ensureProfile(userB.id);
+    // Precondition: the preceding suite archived B's journey.
+    const activeB = (await listGoals(userB.id)).find(
+      (g) => g.status === "active",
+    );
+    expect(activeB).toBeUndefined();
+
+    await startJourney(userB.id, {
+      ambitionId: "cloud-security-engineer",
+      outcome: "B baseline",
+      hoursPerWeek: 3,
+    });
+    const runB = await startRun(userB.id);
+    expect(runB.status).toBe("in_progress");
+    runB1 = runB.id;
+
+    const stateA = await getDiagnosticState(userA.id);
+    const stateB = await getDiagnosticState(userB.id);
+    expect(stateA.status).toBe("complete");
+    expect(stateB.status).toBe("in_progress");
+    if (stateA.status !== "complete" || stateB.status !== "in_progress") {
+      throw new Error("expected terminal A and live B states");
+    }
+    expect(stateA.run.id).toBe(runA1);
+    expect(stateB.run.id).toBe(runB1);
+    expect(stateA.run.id).not.toBe(stateB.run.id);
+
+    // B cannot opt out A's run (ownership is checked before any detail of
+    // the run's existence or status leaks back).
+    await expect(optOut(userB.id, stateA.run.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    // A cannot answer B's run.
+    await expect(
+      submitAnswer(userA.id, {
+        runId: stateB.run.id,
+        itemId: ITEM.mcq,
+        response: "you",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    // A's state is untouched by B's activity.
+    const stateA2 = await getDiagnosticState(userA.id);
+    expect(stateA2.status).toBe("complete");
+  });
+
+  it("M3: submitAnswer blocks on the run row lock (real FOR UPDATE contention)", async () => {
+    const state = await getDiagnosticState(userB.id);
+    if (state.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = state.run.id;
+
+    let releaseLock!: () => void;
+    const lockReleased = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockAcquired!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      lockAcquired = resolve;
+    });
+
+    const raw = createRawClient();
+    try {
+      // A SECOND database connection takes the run row lock and HOLDS it.
+      const held = raw.begin(async (tx) => {
+        await tx`SELECT id FROM diagnostic_runs WHERE id = ${runId} FOR UPDATE`;
+        lockAcquired();
+        await lockReleased;
+      });
+      await lockHeld;
+
+      // The service must serialize on that lock instead of writing.
+      let submitted = false;
+      const pending = submitAnswer(userB.id, {
+        runId,
+        itemId: ITEM.identity,
+        response: "read-only",
+      }).then((result) => {
+        submitted = true;
+        return result;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(submitted).toBe(false); // still blocked by the held lock
+
+      releaseLock();
+      const result = await pending;
+      await held;
+
+      expect(result.duplicate).toBe(false);
+      expect(result.correct).toBe(true);
+    } finally {
+      releaseLock();
+      await raw.end();
+    }
+  });
+
+  it("M3: concurrent duplicate submits yield exactly one row (first-answer-wins)", async () => {
+    const state = await getDiagnosticState(userB.id);
+    if (state.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = state.run.id;
+
+    const [a, b] = await Promise.all([
+      submitAnswer(userB.id, { runId, itemId: ITEM.mcq, response: "you" }),
+      submitAnswer(userB.id, { runId, itemId: ITEM.mcq, response: "you" }),
+    ]);
+    // Exactly one submit created the row; the other reports the duplicate.
+    expect([a, b].filter((r) => !r.duplicate)).toHaveLength(1);
+    expect(a.correct).toBe(true);
+    expect(b.correct).toBe(true);
+
+    const responses = await selectResponsesForRun(userB.id, runId);
+    const mcqRows = responses.filter((r) => r.itemId === ITEM.mcq);
+    expect(mcqRows).toHaveLength(1);
+    expect(mcqRows[0].correct).toBe(true);
+  });
+
+  it("M3: opt-out completes the run with honest unknown levels and blocks submits", async () => {
+    const before = await getDiagnosticState(userB.id);
+    if (before.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = before.run.id;
+
+    // Answers given so far must survive opt-out (history is never deleted).
+    const beforeResponses = await selectResponsesForRun(userB.id, runId);
+    expect(beforeResponses.map((r) => r.itemId).sort()).toEqual(
+      [ITEM.identity, ITEM.mcq].sort(),
+    );
+
+    const opted = await optOut(userB.id, runId);
+    expect(opted.status).toBe("opted_out");
+    expect(opted.completedAt).not.toBeNull();
+    expect(opted).not.toHaveProperty("itemsSnapshot");
+
+    // Every required capability is recorded as unknown — honest, not assumed.
+    const levels = await selectCapabilitiesForLearner(userB.id);
+    expect(levels).toHaveLength(4);
+    expect(levels.every((l) => l.level === "unknown")).toBe(true);
+    expect(levels.every((l) => l.source === "opt-out")).toBe(true);
+    expect(levels.some((l) => l.level === "mastered")).toBe(false);
+
+    const state = await getDiagnosticState(userB.id);
+    expect(state.status).toBe("opted_out");
+    if (state.status !== "opted_out") {
+      throw new Error("expected opted_out state");
+    }
+    expect(state.run.id).toBe(runId);
+
+    // Terminal: submits and a second opt-out are rejected; answers kept.
+    await expect(
+      submitAnswer(userB.id, {
+        runId,
+        itemId: ITEM.network,
+        response: "private-only",
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(optOut(userB.id, runId)).rejects.toBeInstanceOf(ConflictError);
+    const afterResponses = await selectResponsesForRun(userB.id, runId);
+    expect(afterResponses).toHaveLength(beforeResponses.length);
+  });
+
+  it("M3: reassessment starts a fresh run; history and levels are preserved", async () => {
+    const runB2 = await reassess(userB.id);
+    expect(runB2.status).toBe("in_progress");
+    expect(runB2.id).not.toBe(runB1);
+
+    // The opted-out run still exists untouched.
+    const runs = await selectRunsByLearner(userB.id);
+    const old = runs.find((r) => r.id === runB1);
+    expect(old?.status).toBe("opted_out");
+    const oldResponses = await selectResponsesForRun(userB.id, runB1);
+    expect(oldResponses).toHaveLength(2);
+
+    // Levels do NOT change when a new run starts — only on completion.
+    const levels = await selectCapabilitiesForLearner(userB.id);
+    expect(levels).toHaveLength(4);
+    expect(levels.every((l) => l.level === "unknown")).toBe(true);
+    expect(levels.every((l) => l.runId === runB1)).toBe(true);
+
+    // The new run resumes with a clean slate.
+    const state = await getDiagnosticState(userB.id);
+    expect(state.status).toBe("in_progress");
+    if (state.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    expect(state.run.id).toBe(runB2.id);
+    expect(state.answered).toBe(0);
+    expect(state.nextItem?.itemId).toBe(ITEM.mcq);
+  });
+
+  it("M3: all-correct completion on the same bank yields different levels (acceptance)", async () => {
+    const state0 = await getDiagnosticState(userB.id);
+    if (state0.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    const runId = state0.run.id;
+
+    // Trigger answered correctly → the remedial probe is EXCUSED entirely.
+    const mcq = await submitAnswer(userB.id, {
+      runId,
+      itemId: ITEM.mcq,
+      response: "you",
+    });
+    expect(mcq.duplicate).toBe(false);
+    expect(mcq.correct).toBe(true);
+    expect(mcq.nextItem?.itemId).toBe(ITEM.identity);
+
+    await submitAnswer(userB.id, {
+      runId,
+      itemId: ITEM.identity,
+      response: "read-only",
+    });
+    await submitAnswer(userB.id, {
+      runId,
+      itemId: ITEM.network,
+      response: "private-only",
+    });
+    const last = await submitAnswer(userB.id, {
+      runId,
+      itemId: ITEM.detection,
+      response: "sign-in log",
+    });
+    expect(last.complete).toBe(true);
+    expect(last.nextItem).toBeNull();
+
+    const levelsB = await selectCapabilitiesForLearner(userB.id);
+    expect(levelsB).toHaveLength(4);
+    expect(levelsB.every((l) => l.level === "demonstrated")).toBe(true);
+    expect(levelsB.every((l) => l.source === "diagnostic")).toBe(true);
+    expect(levelsB.every((l) => l.runId === runId)).toBe(true);
+
+    // Acceptance: the SAME item bank produced DIFFERENT levels — A missed
+    // shared responsibility (practising) while B was correct everywhere.
+    const levelsA = await selectCapabilitiesForLearner(userA.id);
+    const byCapA = new Map(levelsA.map((l) => [l.capabilityId, l.level]));
+    const byCapB = new Map(levelsB.map((l) => [l.capabilityId, l.level]));
+    const differing = [...byCapA].filter(
+      ([capabilityId, level]) => byCapB.get(capabilityId) !== level,
+    );
+    expect(differing.length).toBeGreaterThan(0);
+    expect(byCapA.get("cloud-shared-responsibility")).toBe("practising");
+    expect(byCapB.get("cloud-shared-responsibility")).toBe("demonstrated");
+    // A diagnostic NEVER assigns mastered — for either learner.
+    expect(levelsA.some((l) => l.level === "mastered")).toBe(false);
+    expect(levelsB.some((l) => l.level === "mastered")).toBe(false);
+  });
+
+  it("M3: reassessment after completion preserves the finished run and resets the live one", async () => {
+    const runA2 = await reassess(userA.id);
+    expect(runA2.status).toBe("in_progress");
+    expect(runA2.id).not.toBe(runA1);
+
+    const runs = await selectRunsByLearner(userA.id);
+    const old = runs.find((r) => r.id === runA1);
+    expect(old?.status).toBe("complete");
+    expect(old?.completedAt).not.toBeNull();
+    const oldResponses = await selectResponsesForRun(userA.id, runA1);
+    // mcq (wrong → probe fired) + boundary + identity + network + detection.
+    // The duplicate mcq submit never created a row (first-answer-wins).
+    expect(oldResponses).toHaveLength(5);
+
+    // Starting a new run never rewrites existing levels…
+    const levels = await selectCapabilitiesForLearner(userA.id);
+    expect(levels.every((l) => l.runId === runA1)).toBe(true);
+
+    // …and the live run starts clean.
+    const state = await getDiagnosticState(userA.id);
+    expect(state.status).toBe("in_progress");
+    if (state.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    expect(state.run.id).toBe(runA2.id);
+    expect(state.answered).toBe(0);
+  });
+
+  it("M3: concurrent startRun calls resolve to one persisted in-progress run", async () => {
+    // Precondition: BOTH of B's existing runs are terminal, so each concurrent
+    // caller passes selectInProgressRun and attempts the INSERT. With the app
+    // pool at max:1 (single FIFO connection) both SELECTs run before either
+    // INSERT, so the loser hits the partial unique index (23505) and must take
+    // startRun's real conflict-recovery path: isUniqueViolation → re-select the
+    // winning row instead of throwing or duplicating the run.
+    const before = await getDiagnosticState(userB.id);
+    expect(before.status).toBe("complete");
+
+    const [first, second] = await Promise.all([
+      startRun(userB.id),
+      startRun(userB.id),
+    ]);
+    expect(first.status).toBe("in_progress");
+    expect(second.status).toBe("in_progress");
+    expect(first.id).toBe(second.id);
+    expect(first).toEqual(second); // both DTOs derive from the same persisted row
+
+    // Exactly ONE in-progress row exists for (learner, ambition).
+    const raw = createRawClient();
+    try {
+      const rows = (await raw`
+        SELECT id FROM diagnostic_runs
+        WHERE learner_id = ${userB.id}
+          AND ambition_id = 'cloud-security-engineer'
+          AND status = 'in_progress'`) as unknown as IdRow[];
+      expect(rows).toHaveLength(1);
+      expect(String(rows[0].id)).toBe(first.id);
+    } finally {
+      await raw.end();
+    }
+
+    // Idempotency still holds after the race.
+    const again = await startRun(userB.id);
+    expect(again.id).toBe(first.id);
+  });
+
+  it("M3: a corrupt items_snapshot fails safely and writes no response or level", async () => {
+    // Obtain the live run through the service — its resume path validates the
+    // snapshot on the way out, proving the run is healthy BEFORE corruption.
+    const run = await startRun(userA.id);
+    expect(run.status).toBe("in_progress");
+    const runId = run.id;
+
+    const responsesBefore = await selectResponsesForRun(userA.id, runId);
+    expect(responsesBefore).toHaveLength(0);
+    const byCapability = <T extends { capabilityId: string }>(rows: T[]) =>
+      [...rows].sort((x, y) => x.capabilityId.localeCompare(y.capabilityId));
+    const levelsBefore = byCapability(
+      await selectCapabilitiesForLearner(userA.id),
+    );
+    expect(levelsBefore).toHaveLength(4); // A's completed baseline run owns these
+
+    const raw = createRawClient();
+    let original: string | null = null;
+    let corrupted = false;
+    try {
+      // Keep the test-owned snapshot (as JSON text) so it can be restored.
+      const rows = (await raw`
+        SELECT items_snapshot::text AS snapshot FROM diagnostic_runs
+        WHERE id = ${runId} AND learner_id = ${userA.id}`) as unknown as {
+        snapshot: string;
+      }[];
+      expect(rows).toHaveLength(1);
+      original = rows[0].snapshot;
+
+      // Corrupt it directly: valid JSON, but not a diagnostic snapshot, so
+      // diagnosticSnapshotSchema must refuse it — bad data never grades.
+      await raw`
+        UPDATE diagnostic_runs SET items_snapshot = '{"corrupt": true}'::jsonb
+        WHERE id = ${runId} AND learner_id = ${userA.id}`;
+      corrupted = true;
+
+      // Loading fails safely with the explicit server-side error…
+      await expect(getDiagnosticState(userA.id)).rejects.toThrow(
+        /Corrupt diagnostic snapshot/,
+      );
+      // …and submitting fails BEFORE grading, inside the transaction: no
+      // response row and no capability-level record may be written.
+      await expect(
+        submitAnswer(userA.id, { runId, itemId: ITEM.mcq, response: "you" }),
+      ).rejects.toThrow(/Corrupt diagnostic snapshot/);
+
+      const responsesAfter = await selectResponsesForRun(userA.id, runId);
+      expect(responsesAfter).toHaveLength(0);
+      const levelsAfter = byCapability(
+        await selectCapabilitiesForLearner(userA.id),
+      );
+      expect(levelsAfter).toEqual(levelsBefore); // still runA1's rows, untouched
+    } finally {
+      if (corrupted && original !== null) {
+        // Put the test-owned row back exactly as it was, even on failure.
+        await raw`
+          UPDATE diagnostic_runs SET items_snapshot = ${original}::jsonb
+          WHERE id = ${runId} AND learner_id = ${userA.id}`;
+      }
+      await raw.end();
+    }
+
+    // Restored: the same run loads again with its original five-item snapshot.
+    const healed = await getDiagnosticState(userA.id);
+    expect(healed.status).toBe("in_progress");
+    if (healed.status !== "in_progress") {
+      throw new Error("expected in_progress state");
+    }
+    expect(healed.run.id).toBe(runId);
+    expect(healed.answered).toBe(0);
+    expect(healed.total).toBe(5);
+  });
+
+  it("the Supabase Data API (anon and authenticated) cannot read the diagnostic tables", async () => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    const anon = createClient(url, anonKey, { auth: { persistSession: false } });
+
+    await ensureProfile(userA.id);
+    const tables = [
+      "diagnostic_runs",
+      "diagnostic_responses",
+      "learner_capabilities",
+      "learner_misconceptions",
+    ] as const;
+
+    // Ground truth through direct DB connections: real learner rows exist in
+    // all these tables right now, so a successful Data API read WOULD return
+    // them (this keeps the error-or-empty fallback from passing vacuously).
+    // Each table is locked by ENABLE ROW LEVEL SECURITY with no policies plus
+    // REVOKE ALL ... FROM anon, authenticated (migrations 0002/0003).
+    const countViaRaw = async () => {
+      const raw = createRawClient();
+      try {
+        const runs = (await raw`SELECT id FROM diagnostic_runs`) as unknown as IdRow[];
+        const responses = (await raw`SELECT id FROM diagnostic_responses`) as unknown as IdRow[];
+        const levels = (await raw`SELECT id FROM learner_capabilities`) as unknown as IdRow[];
+        const misconceptions = (await raw`SELECT id FROM learner_misconceptions`) as unknown as IdRow[];
+        return [
+          runs.length,
+          responses.length,
+          levels.length,
+          misconceptions.length,
+        ];
+      } finally {
+        await raw.end();
+      }
+    };
+    const before = await countViaRaw();
+    expect(before[0]).toBeGreaterThan(0);
+    expect(before[1]).toBeGreaterThan(0);
+    expect(before[2]).toBeGreaterThan(0);
+    expect(before[3]).toBeGreaterThan(0);
+
+    // No session: every diagnostic-table read fails or returns nothing.
+    const anonReads = await Promise.all(
+      tables.map((table) => anon.from(table).select("*")),
+    );
+    for (const read of anonReads) {
+      expect(read.error !== null || (read.data?.length ?? 0) === 0).toBe(true);
+    }
+
+    // Signed in as A (the authenticated Data API role): still denied.
+    const signIn = await anon.auth.signInWithPassword({
+      email: userA.email,
+      password: userA.password,
+    });
+    expect(signIn.error).toBeNull();
+    const authedReads = await Promise.all(
+      tables.map((table) => anon.from(table).select("*")),
+    );
+    for (const read of authedReads) {
+      expect(read.error !== null || (read.data?.length ?? 0) === 0).toBe(true);
+    }
+    await anon.auth.signOut();
+
+    // Reads have no side effects: the same rows are still there.
+    expect(await countViaRaw()).toEqual(before);
+  });
+
   it("deleting auth user A cascades to their profile and goals", async () => {
     await ensureProfile(userA.id);
     const existing = await listGoals(userA.id);
@@ -638,6 +1408,8 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
       expect(profAfter.length).toBe(0);
       const goalsAfter = (await raw`SELECT id FROM goals WHERE learner_id = ${userA.id}`) as unknown as IdRow[];
       expect(goalsAfter.length).toBe(0);
+      const misAfter = (await raw`SELECT id FROM learner_misconceptions WHERE learner_id = ${userA.id}`) as unknown as IdRow[];
+      expect(misAfter.length).toBe(0);
     } finally {
       await raw.end();
     }
