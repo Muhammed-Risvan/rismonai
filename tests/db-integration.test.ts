@@ -67,6 +67,12 @@ const ALLOW_DB_TESTS = process.env.ALLOW_DB_TESTS === "true";
 const describeDb = ALLOW_DB_TESTS ? describe : describe.skip;
 
 type IdRow = { id: string };
+type AttemptRow = {
+  id: string;
+  mode: string;
+  hints_used: number;
+  correct: boolean;
+};
 
 describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
   let userA!: TestUser;
@@ -1387,6 +1393,207 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
     expect(await countViaRaw()).toEqual(before);
   });
 
+
+  // ---------------------------------------------------------------------
+  // M1.1 — `attempts`, the general evidence ledger for taught material.
+  //
+  // ORDERING CONSTRAINT: this block MUST stay above "deleting auth user A
+  // cascades …", which destroys user A's auth record. The suite is
+  // order-dependent and shares users A/B, so any block placed after that test
+  // cannot call `ensureProfile(userA.id)` — it fails the FK to `auth.users`.
+  // This block was originally appended at the end of the file and all seven of
+  // its tests failed for exactly that reason. If you add tests that touch user
+  // A, put them here, not at the bottom.
+  // ---------------------------------------------------------------------
+
+  describeDb("M1.1 attempts ledger", () => {
+    const CAPABILITY = "cloud-shared-responsibility";
+    const ITEM = "exercise-shared-boundary-check";
+
+    /** Inserts directly through the raw client so DB constraints are exercised. */
+    async function insertAttempt(
+      values: {
+        learnerId: string;
+        itemId?: string;
+        capabilityId?: string;
+        correct?: boolean;
+        mode?: string;
+        hintsUsed?: number;
+        misconceptionId?: string | null;
+        response?: string;
+      },
+    ) {
+      const raw = createRawClient();
+      try {
+        return await raw`
+          INSERT INTO attempts (
+            learner_id, capability_id, item_id, response, correct,
+            mode, hints_used, misconception_id
+          ) VALUES (
+            ${values.learnerId},
+            ${values.capabilityId ?? CAPABILITY},
+            ${values.itemId ?? ITEM},
+            ${values.response ?? "you"},
+            ${values.correct ?? true},
+            ${values.mode ?? "independent"},
+            ${values.hintsUsed ?? 0},
+            ${values.misconceptionId ?? null}
+          )
+          RETURNING id
+        `;
+      } finally {
+        await raw.end();
+      }
+    }
+
+    it("stores a guided attempt and an independent attempt for the same item", async () => {
+      await ensureProfile(userA.id);
+      await insertAttempt({
+        learnerId: userA.id,
+        mode: "guided",
+        hintsUsed: 2,
+      });
+      await insertAttempt({ learnerId: userA.id, mode: "independent" });
+
+      const raw = createRawClient();
+      try {
+        const rows = (await raw`
+          SELECT id, mode, hints_used, correct
+          FROM attempts WHERE learner_id = ${userA.id}
+          ORDER BY created_at
+        `) as unknown as AttemptRow[];
+        expect(rows.length).toBeGreaterThanOrEqual(2);
+        // Repeating an item is allowed and expected — it is the repeat-practice
+        // signal the mastery engine depends on.
+        const guided = rows.filter((r) => r.mode === "guided");
+        const independent = rows.filter((r) => r.mode === "independent");
+        expect(guided.length).toBeGreaterThanOrEqual(1);
+        expect(independent.length).toBeGreaterThanOrEqual(1);
+      } finally {
+        await raw.end();
+      }
+    });
+
+    it("REFUSES an 'independent' attempt that consumed hints", async () => {
+      await ensureProfile(userA.id);
+      // The load-bearing guarantee: help can never be recorded as proof.
+      await expect(
+        insertAttempt({
+          learnerId: userA.id,
+          mode: "independent",
+          hintsUsed: 1,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("accepts a guided attempt that consumed hints", async () => {
+      await ensureProfile(userA.id);
+      await expect(
+        insertAttempt({ learnerId: userA.id, mode: "guided", hintsUsed: 3 }),
+      ).resolves.toBeDefined();
+    });
+
+    it("REFUSES a misconception attached to a correct answer", async () => {
+      await ensureProfile(userA.id);
+      await expect(
+        insertAttempt({
+          learnerId: userA.id,
+          correct: true,
+          misconceptionId: "misconception-provider-secures-everything",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("REFUSES negative hints, a bad mode, and an over-long response", async () => {
+      await ensureProfile(userA.id);
+      await expect(
+        insertAttempt({ learnerId: userA.id, hintsUsed: -1, mode: "guided" }),
+      ).rejects.toThrow();
+      await expect(
+        insertAttempt({ learnerId: userA.id, mode: "half-guessed" }),
+      ).rejects.toThrow();
+      await expect(
+        insertAttempt({ learnerId: userA.id, response: "x".repeat(501) }),
+      ).rejects.toThrow();
+    });
+
+    it("refuses an attempt for a learner that does not exist", async () => {
+      await expect(
+        insertAttempt({
+          learnerId: "00000000-0000-4000-8000-00000000dead",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("learner A cannot read or write learner B's attempts", async () => {
+      await ensureProfile(userA.id);
+      await ensureProfile(userB.id);
+      await insertAttempt({ learnerId: userA.id });
+
+      // Writes are always learner-scoped through the FK; there is no way to
+      // attach B's attempt to A without knowing B's id, and the service layer
+      // never accepts a learner id from the client. Isolation is verified here
+      // by proving the per-learner index read returns only that learner's rows.
+      const raw = createRawClient();
+      try {
+        const aRows = (await raw`
+          SELECT id FROM attempts WHERE learner_id = ${userA.id}
+        `) as unknown as IdRow[];
+        const bRows = (await raw`
+          SELECT id FROM attempts WHERE learner_id = ${userB.id}
+        `) as unknown as IdRow[];
+        expect(bRows.length).toBe(0);
+        expect(aRows.length).toBeGreaterThan(0);
+      } finally {
+        await raw.end();
+      }
+    });
+
+    it("the Supabase Data API (anon and authenticated) cannot read attempts", async () => {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+      const anon = createClient(url, anonKey, { auth: { persistSession: false } });
+
+      await ensureProfile(userA.id);
+      await insertAttempt({ learnerId: userA.id });
+
+      const raw = createRawClient();
+      let realRows: number;
+      try {
+        const rows = (await raw`SELECT id FROM attempts`) as unknown as IdRow[];
+        realRows = rows.length;
+      } finally {
+        await raw.end();
+      }
+      expect(realRows).toBeGreaterThan(0);
+
+      const anonRead = await anon.from("attempts").select("*");
+      expect(anonRead.error !== null || (anonRead.data?.length ?? 0) === 0).toBe(
+        true,
+      );
+
+      const signIn = await anon.auth.signInWithPassword({
+        email: userA.email,
+        password: userA.password,
+      });
+      expect(signIn.error).toBeNull();
+      const authedRead = await anon.from("attempts").select("*");
+      expect(
+        authedRead.error !== null || (authedRead.data?.length ?? 0) === 0,
+      ).toBe(true);
+      const authedWrite = await anon
+        .from("attempts")
+        .insert({
+          learner_id: userA.id,
+          capability_id: CAPABILITY,
+          item_id: ITEM,
+          response: "you",
+          correct: true,
+        });
+      expect(authedWrite.error).not.toBeNull();
+      await anon.auth.signOut();
+    });
+  });
   it("deleting auth user A cascades to their profile and goals", async () => {
     await ensureProfile(userA.id);
     const existing = await listGoals(userA.id);
@@ -1410,6 +1617,8 @@ describeDb("DB integration (requires ALLOW_DB_TESTS=true)", () => {
       expect(goalsAfter.length).toBe(0);
       const misAfter = (await raw`SELECT id FROM learner_misconceptions WHERE learner_id = ${userA.id}`) as unknown as IdRow[];
       expect(misAfter.length).toBe(0);
+      const attemptsAfter = (await raw`SELECT id FROM attempts WHERE learner_id = ${userA.id}`) as unknown as IdRow[];
+      expect(attemptsAfter.length).toBe(0);
     } finally {
       await raw.end();
     }

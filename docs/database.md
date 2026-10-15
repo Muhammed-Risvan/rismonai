@@ -120,6 +120,43 @@ level always carries its receipts.
 **Partial index** `learner_capabilities_review_due_idx` on
 `(learner_id, review_at) WHERE review_at IS NOT NULL` — the revision queue.
 
+### `attempts` — the general evidence ledger
+
+The ongoing record of a learner working through taught material: practice with
+help, then the same item again alone.
+
+Distinct from `diagnostic_responses`, which is a **frozen, one-shot
+instrument** — a run snapshots its items, grades against that snapshot, and can
+never award `mastered`.
+
+| Column | Type | Rules |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `learner_id` | uuid | not null, FK → `learner_profiles(id)` `ON DELETE CASCADE`, indexed |
+| `capability_id` | text | not null, `length between 1 and 120` (check) |
+| `item_id` | text | not null, `length between 1 and 120` (check) |
+| `response` | text | not null, `length between 1 and 500` (check) |
+| `correct` | boolean | not null |
+| `mode` | text | not null default `'independent'`, `in ('guided','independent')` (check) |
+| `hints_used` | integer | not null default `0`, `>= 0` (check) |
+| `misconception_id` | text | nullable; **`NULL` or `correct = false`** (check) |
+| `created_at` | timestamptz | not null, default `now()` |
+
+**Deliberately NOT unique on `(learner_id, item_id)`.** Repeating an item is the
+point: two independent passes on the *same* question are weaker evidence than
+passes on different ones, and the mastery engine is what decides that. A unique
+constraint here would silently destroy the repeat-practice signal.
+
+**Check `attempts_independent_implies_no_hints`** — `mode <> 'independent' OR
+hints_used = 0`. The load-bearing independence guarantee, enforced by the
+database: an attempt cannot be recorded as independent if any hint was consumed.
+Without it, an upstream bug could write a hinted pass as independent evidence and
+silently inflate a learner's level.
+
+Index `attempts_learner_capability_idx` on
+`(learner_id, capability_id, created_at)` serves the full-history read that the
+mastery evaluator performs.
+
 ### `learner_misconceptions` — "remember the mistake"
 
 The learner's exposure to an authored misconception. The description and

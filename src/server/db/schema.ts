@@ -285,6 +285,101 @@ export const diagnosticResponses = pgTable(
 );
 
 /**
+ * `attempts` — the general EVIDENCE LEDGER for taught material.
+ *
+ * Distinct from `diagnostic_responses`, which is a frozen, one-shot
+ * instrument: a run snapshots its items, grades against that snapshot, and can
+ * never award `mastered`. This table is the ongoing record of a learner working
+ * through lessons — practice with help, then the same item again alone.
+ *
+ * Deliberately NOT unique on (learner_id, item_id). Repeating an item is the
+ * point: two independent passes on the SAME question are weaker evidence than
+ * passes on different ones, and the mastery engine is what decides that. A
+ * unique constraint here would silently destroy the repeat-practice signal.
+ *
+ * KNOWN LIMITATION (M1): there is no idempotency key, so a client
+ * double-submit could record two rows for one click and inflate `demonstrated`
+ * evidence. The UI disables the submit control while a request is in flight,
+ * which makes this unlikely but not impossible. If it ever matters, adding a
+ * nullable `attempt_key` column plus a partial unique index is additive.
+ */
+export const attempts = pgTable(
+  "attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    learnerId: uuid("learner_id")
+      .notNull()
+      .references(() => learnerProfiles.id, { onDelete: "cascade" }),
+    /** Capability this attempt counts toward (the unit of learning). */
+    capabilityId: text("capability_id").notNull(),
+    /** Item attempted, slug from the reviewed competency map. */
+    itemId: text("item_id").notNull(),
+    response: text("response").notNull(),
+    correct: boolean("correct").notNull(),
+    /**
+     * How much help the learner had. Together with `hints_used` this decides
+     * whether the attempt may ever count as mastery evidence — an assisted pass
+     * is progress, never proof (`core/attempt.ts`).
+     */
+    mode: text("mode").notNull().default("independent"),
+    hintsUsed: integer("hints_used").notNull().default(0),
+    /**
+     * Set ONLY when a wrong answer matched an authored misconception
+     * signature. `null` means "incorrect, reason not identified" — an honest
+     * gap, never a guess.
+     */
+    misconceptionId: text("misconception_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Per-learner and per-capability history reads: the full-history evaluator
+    // loads every attempt for one capability of one learner.
+    index("attempts_learner_id_idx").on(table.learnerId),
+    index("attempts_learner_capability_idx").on(
+      table.learnerId,
+      table.capabilityId,
+      table.createdAt,
+    ),
+    index("attempts_misconception_id_idx").on(table.misconceptionId),
+    check(
+      "attempts_capability_id_length",
+      sql`length(${table.capabilityId}) between 1 and 120`,
+    ),
+    check(
+      "attempts_item_id_length",
+      sql`length(${table.itemId}) between 1 and 120`,
+    ),
+    check(
+      "attempts_response_length",
+      sql`length(${table.response}) between 1 and 500`,
+    ),
+    check(
+      "attempts_mode_valid",
+      sql`${table.mode} in ('guided','independent')`,
+    ),
+    check("attempts_hints_used_non_negative", sql`${table.hintsUsed} >= 0`),
+    /**
+     * The load-bearing independence guarantee, enforced by the database: an
+     * attempt cannot be recorded as `independent` if any hint was consumed.
+     * Without this, a bug upstream could write a hinted pass as independent
+     * evidence and silently inflate a learner's level — the exact failure this
+     * whole system exists to prevent.
+     */
+    check(
+      "attempts_independent_implies_no_hints",
+      sql`${table.mode} <> 'independent' or ${table.hintsUsed} = 0`,
+    ),
+    // A misconception is the REASON an answer was wrong.
+    check(
+      "attempts_misconception_implies_incorrect",
+      sql`${table.misconceptionId} is null or ${table.correct} = false`,
+    ),
+  ],
+);
+
+/**
  * Current capability level per learner (derived from the most recent completed
  * diagnostic run — the summary row, NOT the history; `diagnostic_responses`
  * remains the append-only evidence ledger behind it). One row per
@@ -432,6 +527,7 @@ export const learnerMisconceptions = pgTable(
 
 export type DiagnosticRunRow = typeof diagnosticRuns.$inferSelect;
 export type DiagnosticResponseRow = typeof diagnosticResponses.$inferSelect;
+export type AttemptRow = typeof attempts.$inferSelect;
 export type LearnerCapabilityRow = typeof learnerCapabilities.$inferSelect;
 export type LearnerMisconceptionRow =
   typeof learnerMisconceptions.$inferSelect;

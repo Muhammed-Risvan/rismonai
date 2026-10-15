@@ -36,6 +36,13 @@
       "when": 1792051667515,
       "tag": "0005_puzzling_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792058666372,
+      "tag": "0006_last_raider",
+      "breakpoints": true
     }
   ]
 }

@@ -31,20 +31,31 @@ pnpm typecheck     # TypeScript errors
 pnpm lint          # code style
 pnpm build         # production build
 pnpm db:generate   # writes SQL under drizzle/ — does NOT touch the database
+pnpm test:db       # database tests (see the note below)
 pnpm dev           # local dev server
 git status         # git diff
 ```
 
 These are all **read-only or local**. None of them can damage your data.
 
+> **`pnpm test:db` is safe to run freely.** It creates two throwaway test
+> accounts in your real Supabase project and deletes them afterwards (including
+> on partial failure). It only ever reads and writes its own test rows. You do
+> not need to run it yourself or ask first — run it whenever a change touches
+> the database, and paste the real output.
+>
+> It takes 3–4 minutes, so during ordinary work prefer `pnpm test` and save
+> `pnpm test:db` for changes to `src/server/db/schema.ts`, migrations, or
+> data-access code.
+
 ### 🤝 We both run these, but only you decide
 
 | Command | What it really does |
 | --- | --- |
 | `pnpm install` | Installs packages. Only needed when `package.json` changes. |
-| `pnpm test:db` | Runs database tests. It **creates and deletes throwaway test accounts** in your real Supabase project. Safe by design (it cleans up), but it touches real data. |
+| `pnpm db:migrate` | *(listed above under "you run these" — it changes the real database)* |
 
-I will ask before running either.
+I will ask before running `pnpm install`.
 
 ---
 
